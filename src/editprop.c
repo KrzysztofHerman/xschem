@@ -1976,7 +1976,7 @@ void edit_property(int x)
       else
         tclsetvar("tctx::retval","");
      }
-     else if(xctx->netlist_type==CAD_VERILOG_NETLIST) {
+     else if(IS_VERILOG_NETLIST(xctx->netlist_type)) {
       if(xctx->schverilogprop!=NULL)
         tclsetvar("tctx::retval",xctx->schverilogprop);
       else
@@ -2028,7 +2028,7 @@ void edit_property(int x)
         modified = 1;
         my_strdup(_ALLOC_ID_, &xctx->schsymbolprop, (char *) tclgetvar("tctx::retval"));
 
-     } else if(xctx->netlist_type==CAD_VERILOG_NETLIST &&
+     } else if(IS_VERILOG_NETLIST(xctx->netlist_type) &&
         (!xctx->schverilogprop || strcmp(xctx->schverilogprop, tclgetvar("tctx::retval") ) ) ) {
         modified = 1;
         xctx->push_undo();
@@ -2133,5 +2133,4 @@ void edit_property(int x)
  }
  if(modified) set_modify(1);
 }
-
 

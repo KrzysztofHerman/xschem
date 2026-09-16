@@ -20,7 +20,7 @@
 #  along with this program; if not, write to the Free Software
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-set tcases [list "create_save" "open_close" "netlisting"]
+set tcases [list "create_save" "open_close" "netlisting" "verilog_ams"]
 set log_fn "results.log"
 
 proc summarize_all {fn fd} {

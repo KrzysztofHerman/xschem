@@ -651,6 +651,8 @@ void set_tcl_netlist_type(void)
       tclsetvar("netlist_type", "spice");
     }  else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
       tclsetvar("netlist_type", "verilog");
+    } else if(xctx->netlist_type == CAD_VERILOGAMS_NETLIST) {
+      tclsetvar("netlist_type", "verilogams");
     } else if(xctx->netlist_type == CAD_VHDL_NETLIST) {
       tclsetvar("netlist_type", "vhdl");
     } else if(xctx->netlist_type == CAD_SPECTRE_NETLIST) {
@@ -1118,7 +1120,7 @@ int shorted_instance(int i, int lvs_ignore)
   }
   if(xctx->netlist_type == CAD_SPICE_NETLIST) {
     if((inst[i].flags & SPICE_SHORT) || (sym[inst[i].ptr].flags & SPICE_SHORT) ) shorted = 1;
-  } else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
+  } else if(IS_VERILOG_NETLIST(xctx->netlist_type)) {
     if((inst[i].flags & VERILOG_SHORT) || (sym[inst[i].ptr].flags & VERILOG_SHORT) ) shorted = 1;
   } else if(xctx->netlist_type == CAD_SPECTRE_NETLIST) {
     if((inst[i].flags & SPECTRE_SHORT) || (sym[inst[i].ptr].flags & SPECTRE_SHORT) ) shorted = 1;
@@ -1143,7 +1145,7 @@ int skip_wire(int i)
   int skip = 0;
   if(xctx->netlist_type == CAD_SPICE_NETLIST)
       skip =  skip_wire2(i, netlist_lvs_ignore, SPICE_IGNORE);
-  else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
+  else if(IS_VERILOG_NETLIST(xctx->netlist_type))
       skip =  skip_wire2(i, netlist_lvs_ignore, VERILOG_IGNORE);
   else if(xctx->netlist_type == CAD_SPECTRE_NETLIST)
       skip =  skip_wire2(i, netlist_lvs_ignore, SPECTRE_IGNORE);
@@ -1173,7 +1175,7 @@ int skip_instance(int i, int skip_short, int lvs_ignore)
   if(xctx->inst[i].ptr < 0) skip = 1;
   else if(xctx->netlist_type == CAD_SPICE_NETLIST)
       skip =  skip_instance2(i, lvs_ignore, (skip_short ? SPICE_SHORT : 0) | SPICE_IGNORE);
-  else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
+  else if(IS_VERILOG_NETLIST(xctx->netlist_type))
       skip =  skip_instance2(i, lvs_ignore, (skip_short ? VERILOG_SHORT : 0) | VERILOG_IGNORE);
   else if(xctx->netlist_type == CAD_SPECTRE_NETLIST)
       skip =  skip_instance2(i, lvs_ignore, (skip_short ? SPECTRE_SHORT : 0) | SPECTRE_IGNORE);
@@ -1250,7 +1252,7 @@ static int instcheck(int n, int p)
 
   if(!inst[n].node) return 0;
 
-  if( xctx->netlist_type == CAD_VERILOG_NETLIST &&
+  if( IS_VERILOG_NETLIST(xctx->netlist_type) &&
        ((inst[n].flags & VERILOG_IGNORE) ||
        (k >= 0 && (sym[k].flags & VERILOG_IGNORE))) ) return 0;
 

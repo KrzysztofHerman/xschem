@@ -1041,14 +1041,19 @@ proc netlist {source_file show netlist_file} {
      textwindow $dest
    }
  }
- if {$netlist_type eq {verilog}} {
-   set cmd  ${XSCHEM_SHAREDIR}/verilog.awk
-   if { $verilog_bitblast == 1 } {
-     eval exec {awk -f $cmd -- -bitblast $source_file > $dest}
-   } else {
-     eval exec {awk -f $cmd $source_file > $dest}
-   }
-   if { $verilog_2001==1 } {
+  if {$netlist_type eq {verilog} || $netlist_type eq {verilogams}} {
+    set cmd  ${XSCHEM_SHAREDIR}/verilog.awk
+    if {$netlist_type eq {verilogams}} {
+      set ams {-verilogams}
+    } else {
+      set ams {}
+    }
+    if { $verilog_bitblast == 1 } {
+      eval exec {awk -f $cmd -- $ams -bitblast $source_file > $dest}
+    } else {
+      eval exec {awk -f $cmd -- $ams $source_file > $dest}
+    }
+    if { $netlist_type eq {verilog} && $verilog_2001==1 } {
      set cmd ${XSCHEM_SHAREDIR}/convert_to_verilog2001.awk
      set interm ${dest}[pid]
      eval exec {awk -f $cmd $dest > $interm}
@@ -7568,15 +7573,17 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
     set glob_attr [string map {
           spice     schprop
           vhdl      schvhdlprop
+          verilogams schverilogprop
           verilog   schverilogprop
           tedax     schtedaxprop
           symbol    schsymbolprop
           spectre   schspectreprop
         } $tctx::selected_mode]
-    set mode_list {Spice[S] Vhdl[G] Verilog[V] Tedax[E] Symbol[K] Spectre[F]}
+    set mode_list {Spice[S] Vhdl[G] Verilog[V] Verilog-AMS[A] Tedax[E] Symbol[K] Spectre[F]}
     set tctx::selected_mode [string map {
          spice           Spice[S]
          vhdl            Vhdl[G]
+         verilogams      Verilog-AMS[A]
          verilog         Verilog[V]
          tedax           Tedax[E]
          symbol          Symbol[K]
@@ -10419,6 +10426,9 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.option.netlist add radiobutton -label "Verilog netlist"\
        -background grey60 -variable netlist_type -value verilog -accelerator {Ctrl+Shift+V} \
        -selectcolor $selectcolor -command "xschem set netlist_type verilog; xschem redraw"
+  $topwin.menubar.option.netlist add radiobutton -label "Verilog-AMS netlist"\
+       -background grey60 -variable netlist_type -value verilogams -accelerator {Ctrl+Shift+V} \
+       -selectcolor $selectcolor -command "xschem set netlist_type verilogams; xschem redraw"
   $topwin.menubar.option.netlist add radiobutton -label "tEDAx netlist" \
        -background grey60 -variable netlist_type -value tedax -accelerator {Ctrl+Shift+V} \
        -selectcolor $selectcolor -command "xschem set netlist_type tedax; xschem redraw"
@@ -11772,4 +11782,3 @@ trace add variable XSCHEM_LIBRARY_PATH write trace_set_vars
 # trigger file_chooser update
 trace add variable new_file_browser_depth write trace_set_vars
 trace add variable new_file_browser_ext write trace_set_vars
-

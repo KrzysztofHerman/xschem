@@ -28,6 +28,7 @@ function1="0"
 format="@name @pinlist @value m=@m"
 spectre_format="@name ( @pinlist ) resistor r=@value $mfactor=@m"
 verilog_format="tran @name (@@P\\\\, @@M\\\\);"
+verilogams_format="ams_resistor #(.r( @value )) @name ( @@P\\\\, @@M\\\\);"
 
 tedax_format="footprint @name @footprint
 value @name @value

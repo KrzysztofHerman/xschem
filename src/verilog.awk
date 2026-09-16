@@ -24,8 +24,10 @@
 
 BEGIN{
  bitblast = 0
+ ams = 0
  while( (ARGV[1] ~ /^[-]/) || (ARGV[1] ~ /^$/) ) {
    if(ARGV[1] == "-bitblast") bitblast = 1
+   if(ARGV[1] == "-verilogams") ams = 1
    for(i=2; i<= ARGC;i++) {
      ARGV[i-1] = ARGV[i]
    }
@@ -50,6 +52,8 @@ BEGIN{
  net_types["signed"]=1
  net_types["logic"]=1
  net_types["bool"]=1
+ net_types["electrical"]=1
+ net_types["wreal"]=1
  direction["input"]=1
  direction["inout"]=1
  direction["output"]=1
@@ -164,7 +168,7 @@ primitive==1{primitive_line=primitive_line "\n" $0; next  }
 }
 
 # store signals
-siglist==1 && ($1 in net_types) {
+ siglist==1 && (($1 in net_types) || ams) {
  # 20070525 recognize "reg real", "wire signed"  types and similar
  if($2 in net_types) {
    if($3 ~ /^#/) basename=s_b($4)
@@ -580,4 +584,3 @@ function on_single_line(     i,a,count)
  }
  $0= a
 }
-

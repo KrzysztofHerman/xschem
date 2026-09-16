@@ -9,6 +9,7 @@ Options:
                        (spice/Verilog/VHDL, depending on the netlist 
                        type chosen).
   -w  --verilog        Set netlist type to Verilog.
+      --verilog-ams    Set netlist type to Verilog-AMS (.vams).
   --tcl <tcl_cmd>      Execute specified tcl instructions before any other action,
                        after sourcing xschemrc, this can be used to change xschemrc variables.
   --preinit <tcl_cmd>  Execute specified tcl instructions before any other action,

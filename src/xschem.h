@@ -217,6 +217,9 @@ extern char win_temp_dir[PATH_MAX];
 #define CAD_TEDAX_NETLIST 4
 #define CAD_SYMBOL_ATTRS 5
 #define CAD_SPECTRE_NETLIST 6
+#define CAD_VERILOGAMS_NETLIST 7
+#define IS_VERILOG_NETLIST(t) ((t) == CAD_VERILOG_NETLIST || (t) == CAD_VERILOGAMS_NETLIST)
+#define IS_VERILOGAMS_NETLIST(t) ((t) == CAD_VERILOGAMS_NETLIST)
 
 /*  possible states, encoded in global 'ui_state' */
 #define STARTWIRE 1U
@@ -1761,6 +1764,7 @@ extern void print_verilog_signals(FILE *fd);
 extern void list_nets(char **result);
 extern void print_generic(FILE *fd, char *ent_or_comp, int symbol);
 extern void print_verilog_param(FILE *fd, int symbol);
+extern const char *verilog_format_attribute(void);
 extern void hilight_net(int to_waveform);
 extern void logic_set(int v, int num, const char *net_name);
 extern int hilight_netname(const char *name, int fast);

@@ -16,6 +16,7 @@ install: FORCE
 	$(SCCBOX) install -f -d examples/*.sym "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/*.sch "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/*.cir "$(XDOCDIR)"/examples
+	$(SCCBOX) install -f -d examples/*.vams "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/stimuli.* "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d binto7seg/*.sym "$(XDOCDIR)"/binto7seg
 	$(SCCBOX) install -f -d binto7seg/*.sch "$(XDOCDIR)"/binto7seg
@@ -72,4 +73,3 @@ clean:
 distclean:
 
 FORCE:
-

@@ -3481,7 +3481,7 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
   my_strdup(_ALLOC_ID_, &name,xctx->inst[inst].instname);
   if(!name) my_strdup(_ALLOC_ID_, &name, get_tok_value(template, "name", 0));
 
-  fmt_attr = xctx->format ? xctx->format : "verilog_format";
+ fmt_attr = verilog_format_attribute();
   /* allow format string override in instance */
   my_strdup(_ALLOC_ID_, &format, get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2));
   /* get netlist format rule from symbol */
@@ -3788,7 +3788,7 @@ void print_verilog_element(FILE *fd, int inst)
  Int_hashtable table = {NULL, 0};
  const char *fmt;
 
- fmt_attr = xctx->format ? xctx->format : "verilog_format";
+  fmt_attr = verilog_format_attribute();
 
  /* allow format string override in instance */
  fmt = get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2);
@@ -5549,4 +5549,3 @@ const char *translate3(const char *s, int eat_escapes, const char *s1,
  xctx->tok_size = found_value;
  return translated_tok;
 }
-
