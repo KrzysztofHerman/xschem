@@ -17,6 +17,7 @@ install: FORCE
 	$(SCCBOX) install -f -d examples/*.sym "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/*.sch "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/*.cir "$(XDOCDIR)"/examples
+	$(SCCBOX) install -f -d examples/*.vams "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/stimuli.* "$(XDOCDIR)"/examples
 	$(SCCBOX) install -f -d examples/test_parametric_ports/*.sym "$(XDOCDIR)"/examples/test_parametric_ports
 	$(SCCBOX) install -f -d examples/test_parametric_ports/*.sch "$(XDOCDIR)"/examples/test_parametric_ports
@@ -77,4 +78,3 @@ clean:
 distclean:
 
 FORCE:
-

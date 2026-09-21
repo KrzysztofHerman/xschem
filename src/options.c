@@ -150,6 +150,9 @@ static int check_opt(char *opt, char *optval, int type)
         dbg(1, "process_options(): set netlist type to vhdl\n");
         cli_opt_netlist_type = CAD_VHDL_NETLIST;
 
+    } else if(type == LONG && !strcmp("verilog-ams", opt)) {
+        cli_opt_netlist_type = CAD_VERILOGAMS_NETLIST;
+
     } else if( (type == SHORT && *opt == 'w') || (type == LONG && !strcmp("verilog", opt)) ) {
         dbg(1, "process_options(): set netlist type to verilog\n");
         cli_opt_netlist_type = CAD_VERILOG_NETLIST;
@@ -280,4 +283,3 @@ int process_options(int argc, char *argv[])
   }
   return arg_cnt;
 }
-

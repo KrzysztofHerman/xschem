@@ -3494,6 +3494,322 @@ void print_tedax_element(FILE *fd, int inst)
  my_free(_ALLOC_ID_, &token);
 }
 
+typedef struct {
+  char **name;
+  size_t count;
+} Verilog_port_list;
+
+static void verilog_free_port_list(Verilog_port_list *ports)
+{
+  size_t i;
+
+  for(i = 0; i < ports->count; ++i) my_free(_ALLOC_ID_, &ports->name[i]);
+  my_free(_ALLOC_ID_, &ports->name);
+  ports->count = 0;
+}
+
+static int verilog_ident_start(int c)
+{
+  return isalpha((unsigned char)c) || c == '_' || c == '$' || c == '\\';
+}
+
+static int verilog_ident_char(int c)
+{
+  return isalnum((unsigned char)c) || c == '_' || c == '$';
+}
+
+static const char *verilog_skip_space(const char *s)
+{
+  while(*s && isspace((unsigned char)*s)) ++s;
+  return s;
+}
+
+static char *verilog_strip_comments(const char *source)
+{
+  size_t i, len = strlen(source);
+  int line_comment = 0;
+  int block_comment = 0;
+  char *clean = my_malloc(_ALLOC_ID_, len + 1);
+
+  for(i = 0; i < len; ++i) {
+    if(line_comment) {
+      clean[i] = source[i] == '\n' ? '\n' : ' ';
+      if(source[i] == '\n') line_comment = 0;
+    } else if(block_comment) {
+      clean[i] = source[i] == '\n' ? '\n' : ' ';
+      if(source[i] == '*' && source[i + 1] == '/') {
+        clean[i] = ' ';
+        if(i + 1 < len) clean[++i] = ' ';
+        block_comment = 0;
+      }
+    } else if(source[i] == '/' && source[i + 1] == '/') {
+      clean[i] = ' ';
+      if(i + 1 < len) clean[++i] = ' ';
+      line_comment = 1;
+    } else if(source[i] == '/' && source[i + 1] == '*') {
+      clean[i] = ' ';
+      if(i + 1 < len) clean[++i] = ' ';
+      block_comment = 1;
+    } else {
+      clean[i] = source[i];
+    }
+  }
+  clean[len] = '\0';
+  return clean;
+}
+
+static char *verilog_read_file(const char *filename)
+{
+  FILE *file;
+  long length;
+  size_t bytes;
+  char *source;
+
+  file = fopen(filename, "rb");
+  if(!file) return NULL;
+  if(fseek(file, 0, SEEK_END) || (length = ftell(file)) < 0 || fseek(file, 0, SEEK_SET)) {
+    fclose(file);
+    return NULL;
+  }
+  source = my_malloc(_ALLOC_ID_, (size_t)length + 1);
+  bytes = fread(source, 1, (size_t)length, file);
+  fclose(file);
+  if(bytes != (size_t)length) {
+    my_free(_ALLOC_ID_, &source);
+    return NULL;
+  }
+  source[bytes] = '\0';
+  return source;
+}
+
+static char *verilog_sym_source(int inst)
+{
+  const char *definition;
+  const char *include;
+  const char *start;
+  const char *end;
+  char *definition_copy = NULL;
+  char *filename = NULL;
+  char *source = NULL;
+  char path[PATH_MAX];
+
+  definition = get_tok_value(xctx->inst[inst].prop_ptr, "verilog_sym_def", 0);
+  if(!xctx->tok_size)
+    definition = get_tok_value(xctx->sym[xctx->inst[inst].ptr].prop_ptr, "verilog_sym_def", 0);
+  if(!definition || !definition[0]) return NULL;
+  my_strdup(_ALLOC_ID_, &definition_copy, tcl_hook2(definition));
+  include = verilog_skip_space(definition_copy);
+  if(!strncmp(include, "`include", 8)) {
+    include = verilog_skip_space(include + 8);
+    if(*include == '"' || *include == '<') {
+      char terminator = *include == '"' ? '"' : '>';
+      start = include + 1;
+      end = strchr(start, terminator);
+      if(end && end > start) {
+        my_strndup(_ALLOC_ID_, &filename, start, (size_t)(end - start));
+        my_snprintf(path, S(path), "%s", abs_sym_path(filename, ""));
+        source = verilog_read_file(path);
+        if(!source)
+          fprintf(errfp, "Error: unable to read Verilog definition %s\n", path);
+      }
+    }
+  } else {
+    my_strdup(_ALLOC_ID_, &source, definition_copy);
+  }
+  my_free(_ALLOC_ID_, &filename);
+  my_free(_ALLOC_ID_, &definition_copy);
+  return source;
+}
+
+static int verilog_port_name(const char *start, const char *end, char **name)
+{
+  const char *p = start;
+  const char *last = NULL;
+  size_t last_len = 0;
+
+  while(p < end && *p != '=') {
+    if(verilog_ident_start((unsigned char)*p)) {
+      const char *token = p++;
+      if(token[0] == '\\') {
+        while(p < end && !isspace((unsigned char)*p) && *p != ',' && *p != ')') ++p;
+      } else {
+        while(p < end && verilog_ident_char((unsigned char)*p)) ++p;
+      }
+      last = token;
+      last_len = (size_t)(p - token);
+    } else {
+      ++p;
+    }
+  }
+  if(!last || !last_len) return 0;
+  my_strndup(_ALLOC_ID_, name, last, last_len);
+  return 1;
+}
+
+static int verilog_module_ports(const char *source, const char *module, Verilog_port_list *ports)
+{
+  char *clean = verilog_strip_comments(source);
+  const char *p = clean;
+  const char *module_start;
+  const char *module_end;
+  const char *port_start;
+  const char *port_end;
+  int paren_depth;
+  int bracket_depth;
+  int found = 0;
+
+  while((module_start = strstr(p, "module")) != NULL) {
+    const char *q = module_start + 6;
+    char *module_name = NULL;
+    if((module_start != clean && verilog_ident_char((unsigned char)module_start[-1])) ||
+       verilog_ident_char((unsigned char)*q)) {
+      p = q;
+      continue;
+    }
+    q = verilog_skip_space(q);
+    if(!verilog_port_name(q, q + strcspn(q, " \t\r\n#("), &module_name)) {
+      p = q;
+      continue;
+    }
+    module_end = q + strlen(module_name);
+    if(strcmp(module_name, module)) {
+      my_free(_ALLOC_ID_, &module_name);
+      p = module_end;
+      continue;
+    }
+    my_free(_ALLOC_ID_, &module_name);
+    q = verilog_skip_space(module_end);
+    if(*q == '#') {
+      q = verilog_skip_space(q + 1);
+      if(*q != '(') {
+        p = q;
+        continue;
+      }
+      paren_depth = 1;
+      for(++q; *q && paren_depth; ++q) {
+        if(*q == '(') ++paren_depth;
+        else if(*q == ')') --paren_depth;
+      }
+      q = verilog_skip_space(q);
+    }
+    if(*q != '(') {
+      p = q;
+      continue;
+    }
+    port_start = q + 1;
+    paren_depth = 1;
+    for(port_end = port_start; *port_end && paren_depth; ++port_end) {
+      if(*port_end == '(') ++paren_depth;
+      else if(*port_end == ')') --paren_depth;
+    }
+    if(paren_depth || port_end == port_start) break;
+    --port_end;
+
+    p = port_start;
+    while(p < port_end) {
+      const char *segment = p;
+      const char *segment_end = p;
+      bracket_depth = 0;
+      while(segment_end < port_end) {
+        if(*segment_end == '[') ++bracket_depth;
+        else if(*segment_end == ']') --bracket_depth;
+        else if(*segment_end == ',' && bracket_depth == 0) break;
+        ++segment_end;
+      }
+      segment = verilog_skip_space(segment);
+      while(segment_end > segment && isspace((unsigned char)segment_end[-1])) --segment_end;
+      if(segment < segment_end) {
+        char *name = NULL;
+        if(verilog_port_name(segment, segment_end, &name)) {
+          my_realloc(_ALLOC_ID_, &ports->name,
+              (ports->count + 1) * sizeof(*ports->name));
+          ports->name[ports->count++] = name;
+        }
+      }
+      p = segment_end < port_end ? segment_end + 1 : port_end;
+    }
+    found = ports->count > 0;
+    break;
+  }
+  my_free(_ALLOC_ID_, &clean);
+  return found;
+}
+
+static char *verilog_named_pinlist(int inst)
+{
+  Verilog_port_list ports = {NULL, 0};
+  char *source = NULL;
+  char *result = NULL;
+  char *module_name = NULL;
+  int *matched = NULL;
+  int symbol = xctx->inst[inst].ptr;
+  int pin_count = (xctx->inst[inst].ptr + xctx->sym)->rects[PINLAYER];
+  size_t i;
+  int p;
+  int ok = 1;
+  int first = 1;
+
+  my_strdup(_ALLOC_ID_, &module_name, sanitize(translate(inst, get_sym_name(inst, 0, 0, 0))));
+  source = verilog_sym_source(inst);
+  if(!source || !verilog_module_ports(source, module_name, &ports)) {
+    fprintf(errfp, "Error: unable to parse Verilog module ports for %s\n", module_name);
+    ok = 0;
+    goto done;
+  }
+  matched = my_calloc(_ALLOC_ID_, pin_count, sizeof(*matched));
+  for(i = 0; i < ports.count; ++i) {
+    int found = 0;
+    for(p = 0; p < pin_count; ++p) {
+      const char *pin_name = get_tok_value(xctx->sym[symbol].rect[PINLAYER][p].prop_ptr, "name", 0);
+      if(!matched[p] && strboolcmp(get_tok_value(xctx->sym[symbol].rect[PINLAYER][p].prop_ptr,
+          "verilog_ignore", 0), "true") && !strcmp(pin_name, ports.name[i])) {
+        int multip;
+        const char *net = net_name(inst, p, &multip, 0, 1);
+        if(!net || !net[0]) {
+          fprintf(errfp, "Error: no net connected to Verilog module port %s on %s\n",
+              ports.name[i], module_name);
+          ok = 0;
+        } else {
+          if(!first) my_mstrcat(_ALLOC_ID_, &result, ",\n", NULL);
+          my_mstrcat(_ALLOC_ID_, &result, ".", ports.name[i], "( ", net, " )", NULL);
+          first = 0;
+          matched[p] = 1;
+        }
+        found = 1;
+        break;
+      }
+    }
+    if(!found) {
+      fprintf(errfp, "Error: Verilog module port %s has no matching symbol pin on %s\n",
+          ports.name[i], module_name);
+      ok = 0;
+    }
+  }
+  for(p = 0; p < pin_count; ++p) {
+    const char *pin_name = get_tok_value(xctx->sym[symbol].rect[PINLAYER][p].prop_ptr, "name", 0);
+    int declared = 0;
+    for(i = 0; i < ports.count; ++i) {
+      if(!strcmp(pin_name, ports.name[i])) {
+        declared = 1;
+        break;
+      }
+    }
+    if(!matched[p] && strboolcmp(get_tok_value(xctx->sym[symbol].rect[PINLAYER][p].prop_ptr,
+        "verilog_ignore", 0), "true") && !declared) {
+      fprintf(errfp, "Error: symbol pin %s is not declared by Verilog module %s\n",
+          pin_name, module_name);
+      ok = 0;
+    }
+  }
+done:
+  if(!ok) my_free(_ALLOC_ID_, &result);
+  my_free(_ALLOC_ID_, &matched);
+  my_free(_ALLOC_ID_, &source);
+  my_free(_ALLOC_ID_, &module_name);
+  verilog_free_port_list(&ports);
+  return result;
+}
+
 /* print verilog element if verilog_format is specified */
 static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level primitives, 15112003 */
 {
@@ -3517,7 +3833,7 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
   my_strdup(_ALLOC_ID_, &name,xctx->inst[inst].instname);
   if(!name) my_strdup(_ALLOC_ID_, &name, get_tok_value(template, "name", 0));
 
-  fmt_attr = xctx->format ? xctx->format : "verilog_format";
+ fmt_attr = verilog_format_attribute();
   /* allow format string override in instance */
   my_strdup(_ALLOC_ID_, &format, get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2));
   /* get netlist format rule from symbol */
@@ -3649,7 +3965,32 @@ static void print_verilog_primitive(FILE *fd, int inst) /* netlist switch level 
       topsch = get_trailing_path(xctx->sch[0], 0, 1);
       my_mstrcat(_ALLOC_ID_, &result, topsch, NULL);
     }
-    else if(strcmp(token,"@pinlist")==0) /* of course pinlist must not be present  */
+     else if(strcmp(token,"@namedpinlist")==0)
+     {
+      char *named_pinlist = verilog_named_pinlist(inst);
+      if(named_pinlist) {
+        my_mstrcat(_ALLOC_ID_, &result, named_pinlist, NULL);
+        my_free(_ALLOC_ID_, &named_pinlist);
+      } else {
+        /* Preserve a usable positional instance when an external interface cannot be parsed. */
+        Int_hashtable table = {NULL, 0};
+        int_hash_init(&table, 37);
+        for(i=0; i<no_of_pins; ++i) {
+          if(strboolcmp(get_tok_value(xctx->sym[symbol].rect[PINLAYER][i].prop_ptr,
+              "verilog_ignore", 0), "true")) {
+            const char *pin_name = get_tok_value(xctx->sym[symbol].rect[PINLAYER][i].prop_ptr,
+              "name", 0);
+            if(!int_hash_lookup(&table, pin_name, 1, XINSERT_NOREPLACE)) {
+              int multip;
+              const char *net = net_name(inst, i, &multip, 0, 1);
+              my_mstrcat(_ALLOC_ID_, &result, "----pin(", net, ") ", NULL);
+            }
+          }
+        }
+        int_hash_free(&table);
+      }
+     }
+     else if(strcmp(token,"@pinlist")==0) /* of course pinlist must not be present  */
                                          /* in hash table. print multiplicity */
     {                                    /* and node number: m1 n1 m2 n2 .... */
      Int_hashtable table = {NULL, 0};
@@ -3848,7 +4189,7 @@ void print_verilog_element(FILE *fd, int inst)
  char *pin_name = NULL;
  char *tr_name = NULL;
 
- fmt_attr = xctx->format ? xctx->format : "verilog_format";
+  fmt_attr = verilog_format_attribute();
 
  /* allow format string override in instance */
  fmt = get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2);
@@ -5753,4 +6094,3 @@ const char *translate3(const char *s, int eat_escapes, const char *s1,
  if(result) my_free(_ALLOC_ID_, &result);
  return *translated_tok;
 }
-

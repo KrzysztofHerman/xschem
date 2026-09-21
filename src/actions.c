@@ -2093,7 +2093,7 @@ void toggle_ignore(void)
   char *attr;
   int flag = 0; /* 1: spice_ignore=true, 2: spice_ignore=short */
   const char *ignore_str;
-  if(xctx->netlist_type == CAD_VERILOG_NETLIST) attr="verilog_ignore";
+  if(IS_VERILOG_NETLIST(xctx->netlist_type)) attr="verilog_ignore";
   else if(xctx->netlist_type == CAD_VHDL_NETLIST) attr="vhdl_ignore";
   else if(xctx->netlist_type == CAD_TEDAX_NETLIST) attr="tedax_ignore";
   else if(xctx->netlist_type == CAD_SPECTRE_NETLIST) attr="spectre_ignore";
@@ -4120,4 +4120,3 @@ void recompute_orthogonal_manhattanline(double linex1, double liney1, double lin
 
   return;
 }
-

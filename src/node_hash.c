@@ -22,7 +22,8 @@
 
 #include "xschem.h"
 static Node_hashentry *node_hash_lookup(const char *token, const char *dir,int what,int port,
-       char *sig_type, char *verilog_type, char *value, char *class, const char *orig_tok)
+       char *sig_type, const char *verilog_type, int verilog_type_explicit,
+       char *value, char *class, const char *orig_tok)
 /*    token        dir et all      what           ... action ...
  * --------------------------------------------------------------------------
  * "whatever"     "in"/"out"    0,XINSERT insert in hash table if not in and return NULL
@@ -60,6 +61,8 @@ static Node_hashentry *node_hash_lookup(const char *token, const char *dir,int w
     entry->next = NULL;
     entry->token = entry->sig_type = entry->verilog_type =
                    entry->value = entry->class = entry->orig_tok = NULL;
+    entry->verilog_type_explicit = verilog_type_explicit && verilog_type && verilog_type[0];
+    entry->verilog_type_conflict = 0;
     my_strdup(_ALLOC_ID_, &(entry->token),token);
     if(sig_type &&sig_type[0]) my_strdup(_ALLOC_ID_,  &(entry->sig_type), sig_type);
     if(verilog_type &&verilog_type[0]) my_strdup(_ALLOC_ID_,  &(entry->verilog_type), verilog_type);
@@ -103,8 +106,27 @@ static Node_hashentry *node_hash_lookup(const char *token, const char *dir,int w
     entry->d.inout+=d.inout;
     if(sig_type && sig_type[0] !='\0')
       my_strdup(_ALLOC_ID_,  &(entry->sig_type), sig_type);
-    if(verilog_type && verilog_type[0] !='\0')
-      my_strdup(_ALLOC_ID_,  &(entry->verilog_type), verilog_type);
+    if(verilog_type && verilog_type[0] !='\0' && !entry->verilog_type_conflict) {
+      if(!entry->verilog_type) {
+        my_strdup(_ALLOC_ID_, &(entry->verilog_type), verilog_type);
+        entry->verilog_type_explicit = verilog_type_explicit;
+      } else if(!strcmp(entry->verilog_type, verilog_type)) {
+        if(verilog_type_explicit) entry->verilog_type_explicit = 1;
+      } else if(verilog_type_explicit && !entry->verilog_type_explicit) {
+        my_free(_ALLOC_ID_, &entry->verilog_type);
+        my_strdup(_ALLOC_ID_, &(entry->verilog_type), verilog_type);
+        entry->verilog_type_explicit = 1;
+      } else if(verilog_type_explicit == entry->verilog_type_explicit) {
+        my_free(_ALLOC_ID_, &entry->verilog_type);
+        entry->verilog_type_explicit = verilog_type_explicit;
+        entry->verilog_type_conflict = 1;
+      }
+    } else if(verilog_type && verilog_type[0] !='\0' && verilog_type_explicit &&
+              !entry->verilog_type_explicit) {
+      my_strdup(_ALLOC_ID_, &(entry->verilog_type), verilog_type);
+      entry->verilog_type_explicit = 1;
+      entry->verilog_type_conflict = 0;
+    }
     if(value && value[0] !='\0')
       my_strdup(_ALLOC_ID_,  &(entry->value), value);
     if(class && class[0] !='\0')
@@ -120,8 +142,8 @@ static Node_hashentry *node_hash_lookup(const char *token, const char *dir,int w
 
 /* wrapper to node_hash_lookup that handles buses */
 /* warning, in case of buses return only pointer to first bus element */
-Node_hashentry *bus_node_hash_lookup(const char *token, const char *dir, int what, int port,
-       char *sig_type,char *verilog_type, char *value, char *class)
+Node_hashentry *bus_node_hash_lookup_ams(const char *token, const char *dir, int what, int port,
+       char *sig_type,const char *verilog_type, int verilog_type_explicit, char *value, char *class)
 {
  char *start, *string_ptr, c;
  int mult;
@@ -148,7 +170,8 @@ Node_hashentry *bus_node_hash_lookup(const char *token, const char *dir, int wha
   {
     *string_ptr='\0';  /* set end string at comma position.... */
     /* insert one bus element at a time in hash table */
-    ptr1=node_hash_lookup(start, dir, what,port, sig_type, verilog_type, value, class, token);
+    ptr1=node_hash_lookup(start, dir, what,port, sig_type, verilog_type,
+                          verilog_type_explicit, value, class, token);
     if(!ptr2) ptr2=ptr1;
     dbg(3, "bus_node_hash_lookup(): processing node: %s\n", start);
     *string_ptr=c;     /* ....restore original char */
@@ -159,7 +182,14 @@ Node_hashentry *bus_node_hash_lookup(const char *token, const char *dir, int wha
  }
  /* if something found return first pointer */
  my_free(_ALLOC_ID_, &string);
- return ptr2;
+  return ptr2;
+}
+
+Node_hashentry *bus_node_hash_lookup(const char *token, const char *dir, int what, int port,
+       char *sig_type,const char *verilog_type, char *value, char *class)
+{
+  return bus_node_hash_lookup_ams(token, dir, what, port, sig_type, verilog_type,
+                                  0, value, class);
 }
 
 static void node_hash_free_entry(Node_hashentry *entry)
@@ -408,4 +438,3 @@ void list_nets(char **result)
     }
   }
 }
-

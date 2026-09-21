@@ -651,6 +651,8 @@ void set_tcl_netlist_type(void)
       tclsetvar("netlist_type", "spice");
     }  else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
       tclsetvar("netlist_type", "verilog");
+    } else if(xctx->netlist_type == CAD_VERILOGAMS_NETLIST) {
+      tclsetvar("netlist_type", "verilogams");
     } else if(xctx->netlist_type == CAD_VHDL_NETLIST) {
       tclsetvar("netlist_type", "vhdl");
     } else if(xctx->netlist_type == CAD_SPECTRE_NETLIST) {
@@ -932,8 +934,14 @@ static void set_lab_or_pin_inst_attr(int i, int j, const char *node)
               get_tok_value(xctx->sym[xctx->inst[i].ptr].rect[PINLAYER][0].prop_ptr, "dir",0));
       }
 
-      bus_node_hash_lookup(xctx->inst[i].node[0],    /* insert node in hash table */
-         dir, XINSERT, port, sig_type, verilog_type, value, class);
+      if(IS_VERILOGAMS_NETLIST(xctx->netlist_type)) {
+        const char *domain = verilog_type && verilog_type[0] ? verilog_type : sig_type;
+        bus_node_hash_lookup_ams(xctx->inst[i].node[0],    /* insert node in hash table */
+          dir, XINSERT, port, sig_type, domain, domain && domain[0], value, class);
+      } else {
+        bus_node_hash_lookup(xctx->inst[i].node[0], dir, XINSERT, port,
+          sig_type, verilog_type, value, class);
+      }
 
       if(dir) my_free(_ALLOC_ID_, &dir);
       if(sig_type) my_free(_ALLOC_ID_, &sig_type);
@@ -963,11 +971,18 @@ static void set_inst_node(int i, int j, const char *node)
   my_strdup(_ALLOC_ID_,  &inst[i].node[j], eval_expr(tr_node));
   my_free(_ALLOC_ID_, &tr_node);
   skip = skip_instance(i, 1, netlist_lvs_ignore);
-  if(!for_netlist || skip) {
-    bus_node_hash_lookup(inst[i].node[j],"", XINSERT, 0,"","","","");
-  } else {
-    const char *dir = get_tok_value(rect[j].prop_ptr, "dir",0);
-    bus_node_hash_lookup(inst[i].node[j], dir, XINSERT, 0,"","","","");
+    if(!for_netlist || skip) {
+      bus_node_hash_lookup(inst[i].node[j],"", XINSERT, 0,"","","","");
+    } else {
+      const char *dir = get_tok_value(rect[j].prop_ptr, "dir",0);
+      const char *verilog_type = IS_VERILOGAMS_NETLIST(xctx->netlist_type) ?
+        get_tok_value(rect[j].prop_ptr, "verilog_type",0) : "";
+      if(IS_VERILOGAMS_NETLIST(xctx->netlist_type)) {
+        bus_node_hash_lookup_ams(inst[i].node[j], dir, XINSERT, 0, "", verilog_type,
+          verilog_type && verilog_type[0], "", "");
+      } else {
+        bus_node_hash_lookup(inst[i].node[j], dir, XINSERT, 0,"",verilog_type,"","");
+      }
   }
 
   set_lab_or_pin_inst_attr(i, j, node);
@@ -1134,7 +1149,7 @@ int shorted_instance(int i, int lvs_ignore)
   }
   if(xctx->netlist_type == CAD_SPICE_NETLIST) {
     if((inst[i].flags & SPICE_SHORT) || (sym[inst[i].ptr].flags & SPICE_SHORT) ) shorted = 1;
-  } else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
+  } else if(IS_VERILOG_NETLIST(xctx->netlist_type)) {
     if((inst[i].flags & VERILOG_SHORT) || (sym[inst[i].ptr].flags & VERILOG_SHORT) ) shorted = 1;
   } else if(xctx->netlist_type == CAD_SPECTRE_NETLIST) {
     if((inst[i].flags & SPECTRE_SHORT) || (sym[inst[i].ptr].flags & SPECTRE_SHORT) ) shorted = 1;
@@ -1164,7 +1179,7 @@ int skip_wire(int i)
   int skip = 0;
   if(xctx->netlist_type == CAD_SPICE_NETLIST)
       skip =  skip_wire2(i, netlist_lvs_ignore, SPICE_IGNORE);
-  else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
+  else if(IS_VERILOG_NETLIST(xctx->netlist_type))
       skip =  skip_wire2(i, netlist_lvs_ignore, VERILOG_IGNORE);
   else if(xctx->netlist_type == CAD_SPECTRE_NETLIST)
       skip =  skip_wire2(i, netlist_lvs_ignore, SPECTRE_IGNORE);
@@ -1194,7 +1209,7 @@ int skip_instance(int i, int skip_short, int lvs_ignore)
   if(xctx->inst[i].ptr < 0) skip = 1;
   else if(xctx->netlist_type == CAD_SPICE_NETLIST)
       skip =  skip_instance2(i, lvs_ignore, (skip_short ? SPICE_SHORT : 0) | SPICE_IGNORE);
-  else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
+  else if(IS_VERILOG_NETLIST(xctx->netlist_type))
       skip =  skip_instance2(i, lvs_ignore, (skip_short ? VERILOG_SHORT : 0) | VERILOG_IGNORE);
   else if(xctx->netlist_type == CAD_SPECTRE_NETLIST)
       skip =  skip_instance2(i, lvs_ignore, (skip_short ? SPECTRE_SHORT : 0) | SPECTRE_IGNORE);
@@ -1271,7 +1286,7 @@ static int instcheck(int n, int p)
 
   if(!inst[n].node) return 0;
 
-  if( xctx->netlist_type == CAD_VERILOG_NETLIST &&
+  if( IS_VERILOG_NETLIST(xctx->netlist_type) &&
        ((inst[n].flags & VERILOG_IGNORE) ||
        (k >= 0 && (sym[k].flags & VERILOG_IGNORE))) ) return 0;
 
@@ -1492,8 +1507,14 @@ static int name_nodes_of_pins_labels_and_propagate()
         }
 
         /* do not count multiple labels/pins with same name */
-        bus_node_hash_lookup(inst[i].node[0],    /* insert node in hash table */
-           dir, XINSERT, port, sig_type, verilog_type, value, class);
+        if(IS_VERILOGAMS_NETLIST(xctx->netlist_type)) {
+          const char *domain = verilog_type && verilog_type[0] ? verilog_type : sig_type;
+          bus_node_hash_lookup_ams(inst[i].node[0],    /* insert node in hash table */
+            dir, XINSERT, port, sig_type, domain, domain && domain[0], value, class);
+        } else {
+          bus_node_hash_lookup(inst[i].node[0], dir, XINSERT, port,
+            sig_type, verilog_type, value, class);
+        }
 
         get_inst_pin_coord(i, 0, &x0, &y0);
         get_square(x0, y0, &sqx, &sqy);

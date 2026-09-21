@@ -22,6 +22,41 @@
 
 #include "xschem.h"
 
+const char *verilog_format_attribute(void)
+{
+  if(xctx->format) return xctx->format;
+  return IS_VERILOGAMS_NETLIST(xctx->netlist_type) ? "verilogams_format" : "verilog_format";
+}
+
+static const char *verilog_port_domain(int inst)
+{
+  const char *domain = get_tok_value(xctx->inst[inst].prop_ptr, "verilog_type", 0);
+
+  if(IS_VERILOGAMS_NETLIST(xctx->netlist_type) && (!domain || !domain[0])) {
+    domain = get_tok_value(xctx->inst[inst].prop_ptr, "sig_type", 0);
+  }
+  if(!domain || !domain[0]) domain = "wire";
+  return domain;
+}
+
+static int verilog_ams_element_has_format(int inst)
+{
+  const char *fmt_attr = verilog_format_attribute();
+  const char *fmt;
+
+  fmt = get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2);
+  if(xctx->tok_size) return fmt[0] != '\0';
+  fmt = get_tok_value(xctx->sym[xctx->inst[inst].ptr].prop_ptr, fmt_attr, 2);
+  return fmt[0] != '\0';
+}
+
+static int verilog_ams_element_is_netlistable(int inst, const char *type)
+{
+  if(!IS_VERILOGAMS_NETLIST(xctx->netlist_type)) return 1;
+  if(type && !strcmp(type, "subcircuit")) return 1;
+  return verilog_ams_element_has_format(inst);
+}
+
 static int verilog_netlist(FILE *fd , int verilog_stop)
 {
  int err = 0;
@@ -48,12 +83,13 @@ static int verilog_netlist(FILE *fd , int verilog_stop)
     if(skip_instance(i, 1, lvs_ignore)) continue;
     dbg(2, "verilog_netlist():       into the netlisting loop\n");
     my_strdup(_ALLOC_ID_, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
-    if( type &&
-       ( !IS_LABEL_SH_OR_PIN(type) &&
-         strcmp(type,"netlist_commands")&&
-         strcmp(type,"timescale")&&
-         strcmp(type,"verilog_preprocessor")
-       ))
+     if( type &&
+        ( !IS_LABEL_SH_OR_PIN(type) &&
+          strcmp(type,"netlist_commands")&&
+          strcmp(type,"timescale")&&
+          strcmp(type,"verilog_preprocessor") &&
+          verilog_ams_element_is_netlistable(i, type)
+        ))
     {
      if(xctx->lastsel)
      {
@@ -121,7 +157,8 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
  if(xctx->netlist_name[0]) {
    my_snprintf(cellname, S(cellname), "%s", get_cell_w_ext(xctx->netlist_name, 0));
  } else {
-   my_snprintf(cellname, S(cellname), "%s.v", get_cell(xctx->sch[xctx->currsch], 0));
+   my_snprintf(cellname, S(cellname), "%s.%s", get_cell(xctx->sch[xctx->currsch], 0),
+      IS_VERILOGAMS_NETLIST(xctx->netlist_type) ? "vams" : "v");
  }
 
  dbg(1, "global_verilog_netlist(): opening %s for writing\n",netl_filename);
@@ -129,7 +166,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
 
 
 /* print verilog timescale 10102004 */
- fmt_attr = xctx->format ? xctx->format : "verilog_format";
+ fmt_attr = verilog_format_attribute();
  for(i=0;i<xctx->instances; ++i)
  {
   if(skip_instance(i, 1, lvs_ignore)) continue;
@@ -224,8 +261,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
   if( type && (strcmp(type,"opin"))==0)
   {
    my_strdup(_ALLOC_ID_, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
-   my_strdup(_ALLOC_ID_, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
-   if(!sig_type || sig_type[0]=='\0') my_strdup(_ALLOC_ID_, &sig_type,"wire"); /* 20070720 changed reg to wire */
+    my_strdup(_ALLOC_ID_, &sig_type, verilog_port_domain(i));
    str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  output %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");
@@ -243,8 +279,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
   if( type && (strcmp(type,"iopin"))==0)
   {
    my_strdup(_ALLOC_ID_, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
-   my_strdup(_ALLOC_ID_, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
-   if(!sig_type || sig_type[0]=='\0') my_strdup(_ALLOC_ID_, &sig_type,"wire");
+    my_strdup(_ALLOC_ID_, &sig_type, verilog_port_domain(i));
    str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  inout %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");
@@ -262,8 +297,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
   if( type && (strcmp(type,"ipin"))==0)
   {
    my_strdup(_ALLOC_ID_, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
-   my_strdup(_ALLOC_ID_, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
-   if(!sig_type || sig_type[0]=='\0') my_strdup(_ALLOC_ID_, &sig_type,"wire");
+    my_strdup(_ALLOC_ID_, &sig_type, verilog_port_domain(i));
    str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  input %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");
@@ -298,7 +332,6 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
    fclose(fd);
    my_snprintf(tcl_cmd_netlist, S(tcl_cmd_netlist), "netlist {%s} noshow {%s}", netl_filename, cellname);
    save = xctx->netlist_type;
-   xctx->netlist_type = CAD_VERILOG_NETLIST;
    set_tcl_netlist_type();
    tcleval(tcl_cmd_netlist);
    xctx->netlist_type = save;
@@ -477,7 +510,8 @@ int verilog_block_netlist(FILE *fd, int i, int alert)
       err = 1;
       goto err;
     }
-    my_snprintf(cellname, S(cellname), "%s.v", get_cell(name, 0));
+    my_snprintf(cellname, S(cellname), "%s.%s", get_cell(name, 0),
+      IS_VERILOGAMS_NETLIST(xctx->netlist_type) ? "vams" : "v");
 
   }
   dbg(1, "verilog_block_netlist(): expanding %s\n",  name);
@@ -496,7 +530,7 @@ int verilog_block_netlist(FILE *fd, int i, int alert)
     verilog_stop? load_schematic(0,filename, 0, alert) : load_schematic(1,filename, 0, alert);
     get_additional_symbols(1);
     /* print verilog timescale  and preprocessor directives 10102004 */
-    fmt_attr = xctx->format ? xctx->format : "verilog_format";
+    fmt_attr = verilog_format_attribute();
     for(j=0;j<xctx->instances; ++j)
     {
      if(skip_instance(j, 1, lvs_ignore)) continue;
@@ -651,7 +685,6 @@ int verilog_block_netlist(FILE *fd, int i, int alert)
     fclose(fd);
     my_snprintf(tcl_cmd_netlist, S(tcl_cmd_netlist), "netlist {%s} noshow {%s}", netl_filename, cellname);
     save = xctx->netlist_type;
-    xctx->netlist_type = CAD_VERILOG_NETLIST;
     set_tcl_netlist_type();
     tcleval(tcl_cmd_netlist);
     xctx->netlist_type = save;
@@ -663,4 +696,3 @@ int verilog_block_netlist(FILE *fd, int i, int alert)
   my_free(_ALLOC_ID_, &name);
   return err;
 }
-

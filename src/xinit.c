@@ -707,7 +707,7 @@ static void alloc_xschem_data(const char *top_path, const char *win_path)
   xctx->hide_symbols = 0;
   xctx->netlist_type = CAD_SPICE_NETLIST;
   xctx->format = NULL; /* format string for netlist, (copied from custom_format) otherwise use
-                        * "format", "verilog_format", "vhdl_format", "tedax_format" */
+                        * "format", "verilog_format", "verilogams_format", "vhdl_format", "tedax_format" */
   /* user specified format string to use for spice netlist (xschem set format command) */
   xctx->custom_format = NULL;
   xctx->top_path = NULL;
@@ -3062,6 +3062,8 @@ int Tcl_AppInit(Tcl_Interp *inter)
    if(!strcmp(n, "spice")) xctx->netlist_type = CAD_SPICE_NETLIST;
    else if(!strcmp(n, "vhdl")) xctx->netlist_type = CAD_VHDL_NETLIST;
    else if(!strcmp(n, "verilog")) xctx->netlist_type = CAD_VERILOG_NETLIST;
+   else if(!strcmp(n, "verilogams") || !strcmp(n, "verilog-ams"))
+      xctx->netlist_type = CAD_VERILOGAMS_NETLIST;
    else if(!strcmp(n, "spectre")) xctx->netlist_type = CAD_SPECTRE_NETLIST;
    else if(!strcmp(n, "tedax")) xctx->netlist_type = CAD_TEDAX_NETLIST;
    else if(!strcmp(n, "symbol")) xctx->netlist_type = CAD_SYMBOL_ATTRS;
@@ -3333,7 +3335,7 @@ int Tcl_AppInit(Tcl_Interp *inter)
        global_spice_netlist(1, 1);                  /* 1 means global netlist */
      else if(xctx->netlist_type == CAD_VHDL_NETLIST)
        global_vhdl_netlist(1, 1);                   /* 1 means global netlist */
-     else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
+     else if(IS_VERILOG_NETLIST(xctx->netlist_type))
        global_verilog_netlist(1, 1);                /* 1 means global netlist */
      else if(xctx->netlist_type == CAD_SPECTRE_NETLIST)
        global_spectre_netlist(1, 1);                /* 1 means global netlist */
@@ -3454,6 +3456,3 @@ int Tcl_AppInit(Tcl_Interp *inter)
  dbg(1, "Tcl_AppInit(): returning TCL_OK\n");
  return TCL_OK;
 }
-
-
-

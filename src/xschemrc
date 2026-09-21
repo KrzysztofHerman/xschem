@@ -167,7 +167,7 @@
 ###########################################################################
 #### SOME DEFAULT BEHAVIOR
 ###########################################################################
-#### Allowed values:  spice, verilog, vhdl, tedax, default: spice
+#### Allowed values: spice, spectre, verilog, verilogams, vhdl, tedax. Default: spice
 # set netlist_type spice
 
 #### significant digits of the TCL 'ev' procedure, used to round numbers in netlists and shown device values.
@@ -772,4 +772,3 @@
 # font configure TkDefaultFont -size 14
 # font configure TkTextFont -size 14
 # font configure TkMenuFont -size 14
-

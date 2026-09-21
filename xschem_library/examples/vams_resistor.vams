@@ -1,0 +1,7 @@
+`include "disciplines.vams"
+
+module ams_resistor #(parameter real r = 1k) (p, m);
+  inout p, m;
+  electrical p, m;
+  analog I(p, m) <+ V(p, m) / r;
+endmodule

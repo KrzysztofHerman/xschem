@@ -1,15 +1,18 @@
-v {xschem version=3.4.7RC file_version=1.2}
+v {xschem version=3.4.8RC file_version=1.3}
 G {}
 K {}
 V {}
 S {}
+F {}
 E {}
-N 170 -210 170 -150 {lab=OUT}
+N 170 -180 170 -150 {lab=OUT}
 N 170 -310 170 -240 {lab=VDD}
 N 170 -120 170 -50 {lab=0}
-N 130 -240 130 -120 {lab=IN}
+N 130 -180 130 -120 {lab=IN}
 N 170 -180 240 -180 {lab=OUT}
 N 70 -180 130 -180 {lab=IN}
+N 170 -210 170 -180 {lab=OUT}
+N 130 -240 130 -180 {lab=IN}
 C {nmos4.sym} 150 -120 0 0 {name=MN model=N1
 format="@name @pinlist @model"
 device_model=".model n1 nmos

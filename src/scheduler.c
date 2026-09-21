@@ -1635,6 +1635,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
               else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
                 my_snprintf(f, S(f), "%s.v", get_cell(xctx->current_name, 0));
               }
+              else if(xctx->netlist_type == CAD_VERILOGAMS_NETLIST) {
+                my_snprintf(f, S(f), "%s.vams", get_cell(xctx->current_name, 0));
+              }
               else if(xctx->netlist_type == CAD_SPECTRE_NETLIST) {
                 my_snprintf(f, S(f), "%s.spectre", get_cell(xctx->current_name, 0));
               }
@@ -1666,6 +1669,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             }
             else if(xctx->netlist_type == CAD_VERILOG_NETLIST) {
               Tcl_SetResult(interp, "verilog", TCL_STATIC);
+            }
+            else if(xctx->netlist_type == CAD_VERILOGAMS_NETLIST) {
+              Tcl_SetResult(interp, "verilogams", TCL_STATIC);
             }
             else if(xctx->netlist_type == CAD_TEDAX_NETLIST) {
               Tcl_SetResult(interp, "tedax", TCL_STATIC);
@@ -3687,7 +3693,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           err = global_spice_netlist(hier_netlist, alert);
         else if(xctx->netlist_type == CAD_VHDL_NETLIST)
           err = global_vhdl_netlist(hier_netlist, alert);
-        else if(xctx->netlist_type == CAD_VERILOG_NETLIST)
+        else if(IS_VERILOG_NETLIST(xctx->netlist_type))
           err = global_verilog_netlist(hier_netlist, alert);
         else if(xctx->netlist_type == CAD_SPECTRE_NETLIST)
           err = global_spectre_netlist(hier_netlist, alert);
@@ -5682,6 +5688,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             }
             else if(!strcmp(argv[3], "verilog")) {
               xctx->netlist_type=CAD_VERILOG_NETLIST;
+            }
+            else if(!strcmp(argv[3], "verilogams") || !strcmp(argv[3], "verilog-ams")) {
+              xctx->netlist_type=CAD_VERILOGAMS_NETLIST;
             }
             else if(!strcmp(argv[3], "tedax")) {
               xctx->netlist_type=CAD_TEDAX_NETLIST;

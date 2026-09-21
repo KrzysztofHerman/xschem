@@ -1,15 +1,17 @@
-v {xschem version=3.4.7RC file_version=1.2}
+v {xschem version=3.4.8RC file_version=1.3}
 G {}
 K {}
 V {}
 S {}
+F {}
 E {}
 N 340 -240 340 -160 {lab=TAIL}
 N 340 -320 340 -300 {lab=IN}
-N 300 -160 370 -160 {lab=TAIL}
+N 340 -160 370 -160 {lab=TAIL}
 N 80 -320 340 -320 {lab=IN}
 N 80 -160 180 -160 {lab=CTL}
 N 80 -230 240 -230 {lab=VCC}
+N 300 -160 340 -160 {lab=TAIL}
 C {ipin.sym} 80 -320 0 0 {name=p1 lab=IN}
 C {ipin.sym} 80 -230 0 0 {name=p2 lab=VCC}
 C {ipin.sym} 80 -160 0 0 {name=p3 lab=CTL}

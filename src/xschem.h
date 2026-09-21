@@ -217,6 +217,9 @@ extern char win_temp_dir[PATH_MAX];
 #define CAD_TEDAX_NETLIST 4
 #define CAD_SYMBOL_ATTRS 5
 #define CAD_SPECTRE_NETLIST 6
+#define CAD_VERILOGAMS_NETLIST 7
+#define IS_VERILOG_NETLIST(t) ((t) == CAD_VERILOG_NETLIST || (t) == CAD_VERILOGAMS_NETLIST)
+#define IS_VERILOGAMS_NETLIST(t) ((t) == CAD_VERILOGAMS_NETLIST)
 
 /*  possible states, encoded in global 'ui_state' */
 #define STARTWIRE 1U
@@ -776,6 +779,8 @@ struct node_hashentry
   char *value;
   char *class;
   char *orig_tok;
+  unsigned int verilog_type_explicit;
+  unsigned int verilog_type_conflict;
   Drivers d;
 };
 
@@ -1759,7 +1764,10 @@ extern void node_hash_free(void);
 extern int traverse_node_hash();
 extern Node_hashentry
                 *bus_node_hash_lookup(const char *token, const char *dir,int what, int port, char *sig_type,
-                char *verilog_type, char *value, char *class);
+                const char *verilog_type, char *value, char *class);
+extern Node_hashentry
+                *bus_node_hash_lookup_ams(const char *token, const char *dir,int what, int port, char *sig_type,
+                const char *verilog_type, int verilog_type_explicit, char *value, char *class);
 /* extern void insert_missing_pin(); */
 extern void round_schematic_to_grid(double cadsnap);
 extern void save_selection(int what);
@@ -1768,6 +1776,7 @@ extern void print_verilog_signals(FILE *fd);
 extern void list_nets(char **result);
 extern void print_generic(FILE *fd, char *ent_or_comp, int symbol);
 extern void print_verilog_param(FILE *fd, int symbol);
+extern const char *verilog_format_attribute(void);
 extern void hilight_net(int to_waveform);
 extern void logic_set(int v, int num, const char *net_name);
 extern int hilight_netname(const char *name, int fast);
