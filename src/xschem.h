@@ -779,6 +779,8 @@ struct node_hashentry
   char *value;
   char *class;
   char *orig_tok;
+  unsigned int verilog_type_explicit;
+  unsigned int verilog_type_conflict;
   Drivers d;
 };
 
@@ -1755,7 +1757,10 @@ extern void node_hash_free(void);
 extern int traverse_node_hash();
 extern Node_hashentry
                 *bus_node_hash_lookup(const char *token, const char *dir,int what, int port, char *sig_type,
-                char *verilog_type, char *value, char *class);
+                const char *verilog_type, char *value, char *class);
+extern Node_hashentry
+                *bus_node_hash_lookup_ams(const char *token, const char *dir,int what, int port, char *sig_type,
+                const char *verilog_type, int verilog_type_explicit, char *value, char *class);
 /* extern void insert_missing_pin(); */
 extern void round_schematic_to_grid(double cadsnap);
 extern void save_selection(int what);

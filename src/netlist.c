@@ -934,8 +934,14 @@ static void set_lab_or_pin_inst_attr(int i, int j, const char *node)
               get_tok_value(xctx->sym[xctx->inst[i].ptr].rect[PINLAYER][0].prop_ptr, "dir",0));
       }
 
-      bus_node_hash_lookup(xctx->inst[i].node[0],    /* insert node in hash table */
-         dir, XINSERT, port, sig_type, verilog_type, value, class);
+      if(IS_VERILOGAMS_NETLIST(xctx->netlist_type)) {
+        const char *domain = verilog_type && verilog_type[0] ? verilog_type : sig_type;
+        bus_node_hash_lookup_ams(xctx->inst[i].node[0],    /* insert node in hash table */
+          dir, XINSERT, port, sig_type, domain, domain && domain[0], value, class);
+      } else {
+        bus_node_hash_lookup(xctx->inst[i].node[0], dir, XINSERT, port,
+          sig_type, verilog_type, value, class);
+      }
 
       if(dir) my_free(_ALLOC_ID_, &dir);
       if(sig_type) my_free(_ALLOC_ID_, &sig_type);
@@ -960,11 +966,18 @@ static void set_inst_node(int i, int j, const char *node)
   expandlabel(inst[i].instname, &inst_mult);
   my_strdup(_ALLOC_ID_,  &inst[i].node[j], node);
   skip = skip_instance(i, 1, netlist_lvs_ignore);
-  if(!for_netlist || skip) {
-    bus_node_hash_lookup(inst[i].node[j],"", XINSERT, 0,"","","","");
-  } else {
-    const char *dir = get_tok_value(rect[j].prop_ptr, "dir",0);
-    bus_node_hash_lookup(inst[i].node[j], dir, XINSERT, 0,"","","","");
+    if(!for_netlist || skip) {
+      bus_node_hash_lookup(inst[i].node[j],"", XINSERT, 0,"","","","");
+    } else {
+      const char *dir = get_tok_value(rect[j].prop_ptr, "dir",0);
+      const char *verilog_type = IS_VERILOGAMS_NETLIST(xctx->netlist_type) ?
+        get_tok_value(rect[j].prop_ptr, "verilog_type",0) : "";
+      if(IS_VERILOGAMS_NETLIST(xctx->netlist_type)) {
+        bus_node_hash_lookup_ams(inst[i].node[j], dir, XINSERT, 0, "", verilog_type,
+          verilog_type && verilog_type[0], "", "");
+      } else {
+        bus_node_hash_lookup(inst[i].node[j], dir, XINSERT, 0,"",verilog_type,"","");
+      }
   }
 
   set_lab_or_pin_inst_attr(i, j, node);
@@ -1467,8 +1480,14 @@ static int name_nodes_of_pins_labels_and_propagate()
         }
 
         /* do not count multiple labels/pins with same name */
-        bus_node_hash_lookup(inst[i].node[0],    /* insert node in hash table */
-           dir, XINSERT, port, sig_type, verilog_type, value, class);
+        if(IS_VERILOGAMS_NETLIST(xctx->netlist_type)) {
+          const char *domain = verilog_type && verilog_type[0] ? verilog_type : sig_type;
+          bus_node_hash_lookup_ams(inst[i].node[0],    /* insert node in hash table */
+            dir, XINSERT, port, sig_type, domain, domain && domain[0], value, class);
+        } else {
+          bus_node_hash_lookup(inst[i].node[0], dir, XINSERT, port,
+            sig_type, verilog_type, value, class);
+        }
 
         get_inst_pin_coord(i, 0, &x0, &y0);
         get_square(x0, y0, &sqx, &sqy);

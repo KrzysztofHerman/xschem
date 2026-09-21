@@ -28,6 +28,35 @@ const char *verilog_format_attribute(void)
   return IS_VERILOGAMS_NETLIST(xctx->netlist_type) ? "verilogams_format" : "verilog_format";
 }
 
+static const char *verilog_port_domain(int inst)
+{
+  const char *domain = get_tok_value(xctx->inst[inst].prop_ptr, "verilog_type", 0);
+
+  if(IS_VERILOGAMS_NETLIST(xctx->netlist_type) && (!domain || !domain[0])) {
+    domain = get_tok_value(xctx->inst[inst].prop_ptr, "sig_type", 0);
+  }
+  if(!domain || !domain[0]) domain = "wire";
+  return domain;
+}
+
+static int verilog_ams_element_has_format(int inst)
+{
+  const char *fmt_attr = verilog_format_attribute();
+  const char *fmt;
+
+  fmt = get_tok_value(xctx->inst[inst].prop_ptr, fmt_attr, 2);
+  if(xctx->tok_size) return fmt[0] != '\0';
+  fmt = get_tok_value(xctx->sym[xctx->inst[inst].ptr].prop_ptr, fmt_attr, 2);
+  return fmt[0] != '\0';
+}
+
+static int verilog_ams_element_is_netlistable(int inst, const char *type)
+{
+  if(!IS_VERILOGAMS_NETLIST(xctx->netlist_type)) return 1;
+  if(type && !strcmp(type, "subcircuit")) return 1;
+  return verilog_ams_element_has_format(inst);
+}
+
 static int verilog_netlist(FILE *fd , int verilog_stop)
 {
  int err = 0;
@@ -54,12 +83,13 @@ static int verilog_netlist(FILE *fd , int verilog_stop)
     if(skip_instance(i, 1, lvs_ignore)) continue;
     dbg(2, "verilog_netlist():       into the netlisting loop\n");
     my_strdup(_ALLOC_ID_, &type,(xctx->inst[i].ptr+ xctx->sym)->type);
-    if( type &&
-       ( !IS_LABEL_SH_OR_PIN(type) &&
-         strcmp(type,"netlist_commands")&&
-         strcmp(type,"timescale")&&
-         strcmp(type,"verilog_preprocessor")
-       ))
+     if( type &&
+        ( !IS_LABEL_SH_OR_PIN(type) &&
+          strcmp(type,"netlist_commands")&&
+          strcmp(type,"timescale")&&
+          strcmp(type,"verilog_preprocessor") &&
+          verilog_ams_element_is_netlistable(i, type)
+        ))
     {
      if(xctx->lastsel)
      {
@@ -229,8 +259,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
   if( type && (strcmp(type,"opin"))==0)
   {
    my_strdup(_ALLOC_ID_, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
-   my_strdup(_ALLOC_ID_, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
-   if(!sig_type || sig_type[0]=='\0') my_strdup(_ALLOC_ID_, &sig_type,"wire"); /* 20070720 changed reg to wire */
+    my_strdup(_ALLOC_ID_, &sig_type, verilog_port_domain(i));
    str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  output %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");
@@ -248,8 +277,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
   if( type && (strcmp(type,"iopin"))==0)
   {
    my_strdup(_ALLOC_ID_, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
-   my_strdup(_ALLOC_ID_, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
-   if(!sig_type || sig_type[0]=='\0') my_strdup(_ALLOC_ID_, &sig_type,"wire");
+    my_strdup(_ALLOC_ID_, &sig_type, verilog_port_domain(i));
    str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  inout %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");
@@ -267,8 +295,7 @@ int global_verilog_netlist(int global, int alert)  /* netlister driver */
   if( type && (strcmp(type,"ipin"))==0)
   {
    my_strdup(_ALLOC_ID_, &port_value,get_tok_value(xctx->inst[i].prop_ptr,"value",0));
-   my_strdup(_ALLOC_ID_, &sig_type,get_tok_value(xctx->inst[i].prop_ptr,"verilog_type",0));
-   if(!sig_type || sig_type[0]=='\0') my_strdup(_ALLOC_ID_, &sig_type,"wire");
+    my_strdup(_ALLOC_ID_, &sig_type, verilog_port_domain(i));
    str_tmp = xctx->inst[i].lab ? xctx->inst[i].lab : "";
    fprintf(fd, "  input %s ;\n", str_tmp ? str_tmp : "<NULL>");
    fprintf(fd, "  %s %s ", sig_type, str_tmp ? str_tmp : "<NULL>");

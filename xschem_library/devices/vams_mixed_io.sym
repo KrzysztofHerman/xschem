@@ -1,6 +1,6 @@
 v {xschem version=3.4.8 file_version=1.2}
 G {}
-K {type=vams_primitive
+K {type=subcircuit
 verilogams_format="@symname @name ( @pinlist );"
 template="name=U1"
 }

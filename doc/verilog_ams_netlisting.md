@@ -74,7 +74,79 @@ mixed interface: `AIN` is an electrical input, `DOUT` is a logic output, and
 instance while the pin `verilog_type` attributes document and propagate the
 interface types when the symbol is reused as a hierarchical interface. For a
 net connected to an instance, put `verilog_type` on the attached top-level pin
-or `lab_pin.sym` as well; that is what controls the parent net declaration.
+or `lab_pin.sym` when the parent segment is intentionally coerced. An inferred
+type from a child pin is used only when all inferred types agree. If inferred
+types conflict, Xschem emits a neutral `wire` declaration instead of allowing
+net traversal order to choose a domain. This leaves discipline resolution and
+connect-module insertion to the simulator as required by VAMS-2023.
+
+### Text-defined modules and named connections
+
+A symbol can use `@namedpinlist` in its `verilogams_format` when the module
+interface is defined in a separate Verilog-AMS file referenced by
+`verilog_sym_def`:
+
+```text
+type=subcircuit
+verilogams_format="@symname @name ( @namedpinlist );"
+verilog_sym_def="tcleval(`include \"[abs_sym_path model.vams]\")"
+```
+
+Xschem reads the matching module declaration from the referenced text file,
+matches its formal ports to symbol pins by name, and obtains each actual net
+from schematic connectivity. The resulting connections are named and follow
+the order of the text module's port list:
+
+```verilog
+model U1 (
+  .vss(net1),
+  .signal(net2)
+);
+```
+
+The module port is the name before the parentheses; the schematic net is the
+expression inside them. Missing or extra ports are reported rather than being
+silently connected positionally. `@namedpinlist` falls back to positional
+connections after reporting an interface parsing error, preserving the
+existing netlisting behavior for a malformed external definition.
+
+## Menu and command selection
+
+The dedicated `Options -> Netlist -> Verilog-AMS netlist` entry selects the
+`verilogams` netlist type. The same mode is available in batch mode with
+`--verilog-ams` and through Tcl with `xschem set netlist_type verilogams`.
+Verilog-AMS output uses `.vams` files and `verilogams_format` attributes.
+In AMS mode, schematic-only entries and primitives without a non-empty
+`verilogams_format` are omitted. `subcircuit` instances are retained so
+hierarchical modules continue to netlist even when their call format is
+provided by the symbol or generated elsewhere.
+
+## Local nets and connect modules
+
+Xschem should represent a local interconnect with an ordinary wire and should
+not insert an `a2d`, `d2a`, or bidirectional connect module during schematic
+netlisting. The VAMS-2023 order is:
+
+1. Elaborate hierarchy and resolve all net segments.
+2. Resolve undeclared disciplines using the simulator's basic or detail mode.
+3. Apply `connectrules` and insert available `connectmodule` definitions.
+
+Use `verilog_type` on an Xschem `ipin`, `opin`, `iopin`, or `lab_pin.sym` when
+an explicit discipline declaration is required. Leave ordinary local wires
+without a type when they are intended to inherit a discipline through
+hierarchy. A connect-rules block can be supplied with a
+`verilog_preprocessor.sym` or `netlist_commands` instance, for example:
+
+```verilog
+connectrules ams_rules;
+  connect a2d merged input electrical, output logic;
+  connect d2a merged input logic, output electrical;
+endconnectrules
+```
+
+The `a2d` and `d2a` definitions must be supplied by the simulator or by an
+included Verilog-AMS model library. Xschem only emits the hierarchy, port
+directions, explicit declarations, and rules selected by the schematic.
 
 ### Verification strategy
 
