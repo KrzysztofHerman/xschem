@@ -242,6 +242,7 @@ void eval_expr_init_table(void)  /* puts arithmetic functions in table. */
 void eval_expr_clear_table(void)
 {
   symrec *ptr = sym_table;
+  if(ret) my_free(_ALLOC_ID_, &ret);
   while(ptr) {
     symrec *tmp = ptr;
     ptr = ptr->next;
@@ -347,8 +348,13 @@ static int kklex()
 char *eval_expr(const char *s)
 {
   lex_state = 0;
-  if(ret) my_free(_ALLOC_ID_, &ret);
-  strptr = str = s;
-  kkparse();
-  return ret;
+  if(is_expr(s)) {
+    if(ret) my_free(_ALLOC_ID_, &ret);
+    strptr = str = s;
+    kkparse();
+    return ret;
+  } else {
+    my_strdup2(_ALLOC_ID_, &ret, s);
+    return ret;
+  }
 }

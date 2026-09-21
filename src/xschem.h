@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1167,12 +1167,13 @@ typedef struct {
   /* top_path is the path prefix of drawing canvas (current_win_path):
    * top_path is always "" in tabbed interface 
    * current_win_path
-   *    canvas           top_path
-   *  ----------------------------
-   *    ".drw"            ""
-   *    ".x1.drw"         ".x1"
+   *    canvas           top_path           top_path
+   *                   multi window      tabbed interface
+   *  -----------------------------------------------------
+   *    ".drw"            ""                    ""
+   *    ".x1.drw"         ".x1"                 ""
    */
-  char *current_win_path; /* .drw or .x1.drw, .... ; always .drw in tabbed interface */
+  char *current_win_path; /* .drw or .x1.drw, .x2.drw .... (also in tabbed interface). */
   int *fill_type; /* for every layer: 0: no fill, 1, solid fill, 2: stipple fill */
   int fill_pattern;
   int draw_pixmap; /* pixmap used as 2nd buffer */
@@ -1181,6 +1182,7 @@ typedef struct {
   int do_copy_area;
   double cadhalfdotsize;
   time_t time_last_modify;
+  int warn_disk_file_modified;
   int undo_type; /* 0: on disk, 1: in memory */
   void (*push_undo)(void);
   void (*pop_undo)(int, int);
@@ -1347,7 +1349,7 @@ extern int schematic_in_new_window(int new_process, int dr, int force);
 extern void symbol_in_new_window(int new_process);
 extern void new_xschem_process(const char *cell, int symbol);
 extern void ask_new_file(int in_new_window, char *filename);
-extern void saveas(const char *f, int type);
+extern int saveas(const char *f, int type);
 extern const char *get_file_path(char *f);
 extern int save(int confirm, int fast);
 extern void save_ascii_string(const char *ptr, FILE *fd, int newline);
@@ -1428,8 +1430,8 @@ extern Selected select_object(double mx,double my, unsigned short sel_mode,
 extern int set_first_sel(unsigned short type, int n, unsigned int col);
 extern void unselect_all(int dr);
 extern void select_attached_nets(void);
-extern void select_inside(int stretch, double x1,double y1, double x2, double y2, int sel);
-extern void select_touch(double x1,double y1, double x2, double y2, int sel);
+extern void select_inside(int stretch, int itexts, double x1,double y1, double x2, double y2, int sel);
+extern void select_touch(int itexts, double x1,double y1, double x2, double y2, int sel);
 /*  Select all nets that are dangling, ie not attached to any non pin/port/probe components */
 extern int select_dangling_nets(void);
 extern void tclmainloop(void);
@@ -1497,6 +1499,8 @@ extern int lineclip(double *xa,double *ya,double *xb,double *yb,
 extern int textclip(int x1,int y1,int x2,int y2,
            double xa,double ya,double xb,double yb);
 extern double dist_from_rect(double mx,
+              double my, double x1, double y1, double x2, double y2);
+extern double dist_from_element(double mx,
               double my, double x1, double y1, double x2, double y2);
 extern double dist(double x1,double y1,double x2,double y2,double xa,double ya);
 extern double rectdist(double x1,double y1,double x2,double y2,double xa,double ya);
@@ -1660,14 +1664,16 @@ extern Ptr_hashentry *ptr_hash_lookup(Ptr_hashtable *hashtable,
 extern char *trim_chars(const char *str, const char *sep);
 extern char *find_nth(const char *str, const char *sep, const char *quote, int keep_quote, int n);
 extern int isonlydigit(const char *s);
-extern const char *spice_get_node(const char *token);
+extern char *spice_get_node(const char *token);
 extern char *get_fqdevice(const char *param, int modelparam, const char *instname);
-extern const char *translate(int inst, const char* s);
-extern const char* translate2(Lcc *lcc, int level, char* s);
+extern char *recursive_subst(const char *value, int symbol);
+extern const char *translate(int inst, const char* s, char **result);
+extern const char* translate2(Lcc *lcc, int level, char* s, char **result);
 extern const char *translate3(const char* s, int eat_escapes, const char *s1,
-                              const char *s2, const char *s3, const char *s4);
+                              const char *s2, const char *s3, const char *s4, char **translated_tok);
 extern void print_tedax_element(FILE *fd, int inst);
 extern int print_spice_element(FILE *fd, int inst);
+extern int has_included_subcircuit(int inst, int symbol, char **result);
 extern void print_spice_subckt_nodes(FILE *fd, int symbol);
 extern int print_spectre_element(FILE *fd, int inst);
 extern void print_spectre_subckt_nodes(FILE *fd, int symbol);
@@ -1738,6 +1744,7 @@ extern void check_polygon_storage(int c);
 extern void eval_expr_init_table(void);
 extern void eval_expr_clear_table(void);
 extern char *eval_expr(const char *s);
+extern const char *is_expr(const char *str);
 extern const char *expandlabel(const char *s, int *m);
 extern void parse(const char *s);
 extern void clear_expandlabel_data(void);
@@ -1813,6 +1820,7 @@ extern void list_hilights(int all);
 extern void change_layer();
 extern void launcher();
 extern void windowid(const char *win_path);
+extern int cache_schematic(int what, const char *sch_name);
 extern int preview_window(const char *what, const char *tk_win_path, const char *fname);
 extern int new_schematic(const char *what, const char *win_path, const char *fname, int dr);
 extern void toggle_fullscreen(const char *topwin);

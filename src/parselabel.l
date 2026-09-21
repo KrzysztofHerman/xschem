@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2023 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -69,6 +69,8 @@ void clear_expandlabel_data(void)
   my_free(_ALLOC_ID_, &dest_string.str);
 }
 
+void reset_lexer(void);
+
 static void str_char_replace(char s[], char chr, char repl_chr)
 {
      int i=0;
@@ -95,6 +97,8 @@ void parse(const char *s)
 const char *expandlabel(const char *s, int *m)
 {
  YY_BUFFER_STATE buf;
+ int mm;
+ if(m == NULL) m = &mm;
  my_free(_ALLOC_ID_, &dest_string.str);     /* 30102004  delete 'memory' of previous execution */
 
  if(!s) {
@@ -123,10 +127,14 @@ const char *expandlabel(const char *s, int *m)
    fprintf(errfp, "syntax error in %s\n", s);
    my_snprintf(cmd, l,
      "tk_messageBox -icon error -type ok -parent [xschem get topwindow] "
-     "-message {Syntax error in identifier expansion: %s\nschematic:\n%s}", s, xctx->sch[xctx->currsch]);
-   if(has_x) tcleval(cmd);
+     "-message {Syntax error in identifier expansion: %s\nschematic:\n%s}", s,
+      xctx->sch[xctx->currsch] ? xctx->sch[xctx->currsch] : "<NULL>");
+   if(has_x) {
+     xctx->semaphore += 3;
+     tcleval(cmd);
+     xctx->semaphore -= 3;
+   }
    my_free(_ALLOC_ID_, &cmd);
-
  }
  if(parselabel_debug >= 3)
    fprintf(errfp, "expandlabel(): returning %s  from %s mult=%d\n",dest_string.str, s, dest_string.m);
@@ -138,7 +146,9 @@ const char *expandlabel(const char *s, int *m)
    }
  } else {
    *m=-1;
+   dest_string.m = -1;
    my_strdup2(_ALLOC_ID_, &dest_string.str, s);
+   reset_lexer();
  }
  return dest_string.str;
 }
@@ -160,7 +170,7 @@ DDOT {SP}".."{SP}
 CLN {SP}":"{SP}
 MULTIP {SP}"*"{SP}
 LAB [-(a-zA-Z_%$~"+#!/\\<>]
-LAB_NODASH [(a-zA-Z_%$~"+#!/\\<>]
+LAB_NODASH [(a-zA-Z_%$~"+@#!/\\<>]
   /* includes numbers */
 LAB_NUM [-a-zA-Z_%$~"+#!/\\<>0-9]
   /* includes numbers and space and *+(). */
@@ -336,3 +346,9 @@ ID_EXT_PARENTHESIS ([-~"#+/=_a-zA-Z][-#!@\\/:.=_+a-zA-Z0-9]*\([-~"#!@\\/:.=_+a-z
                         }
 %%
 
+
+void reset_lexer(void)
+{
+  YY_FLUSH_BUFFER;
+  BEGIN(INITIAL);
+}

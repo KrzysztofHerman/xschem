@@ -1,9 +1,9 @@
-v {xschem version=3.4.4 file_version=1.2
+v {xschem version=3.4.8RC file_version=1.3
 *
 * This file is part of XSCHEM,
 * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
 * simulation.
-* Copyright (C) 1998-2024 Stefan Frederik Schippers
+* Copyright (C) 1998-2026 Stefan Frederik Schippers
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -21,9 +21,11 @@ v {xschem version=3.4.4 file_version=1.2
 }
 G {
 Y <= not (not A)  after delay ;}
+K {}
 V {assign #del Y=A;
 }
 S {}
+F {}
 E {}
 C {opin.sym} 670 -290 0 0 {name=p0 lab=Y}
 C {ipin.sym} 250 -290 0 0 {name=p3 lab=A}
@@ -37,3 +39,5 @@ library ieee;
 --         use SYNOPSYS.ATTRIBUTES.ALL;
 }
 C {title.sym} 160 -30 0 0 {name=l2}
+C {noconn.sym} 670 -290 0 0 {name=l1}
+C {noconn.sym} 250 -290 0 1 {name=l3}

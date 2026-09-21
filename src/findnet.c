@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -398,7 +398,7 @@ static void find_closest_arc(double mx, double my, int override_lock)
 static void find_closest_box(double mx ,double my, int override_lock)
 {
  double tmp;
- double threshold = CADWIREMINDIST * xctx->zoom * tk_scaling;
+ double threshold = CADWIREMINDIST * xctx->zoom * tk_scaling * 2;
  int i, c, r=-1, col = 0;
  double d = distance;
 
@@ -408,8 +408,8 @@ static void find_closest_box(double mx ,double my, int override_lock)
   if(!xctx->enable_layer[c]) continue;
   for(i=0;i<xctx->rects[c]; ++i)
   {
-   if( POINTINSIDE(mx, my, xctx->rect[c][i].x1 - threshold, xctx->rect[c][i].y1 - threshold,
-                         xctx->rect[c][i].x2 + threshold, xctx->rect[c][i].y2 + threshold) &&
+   if( POINTINSIDE(mx, my, xctx->rect[c][i].x1, xctx->rect[c][i].y1,
+                         xctx->rect[c][i].x2, xctx->rect[c][i].y2) &&
       !POINTINSIDE(mx, my, xctx->rect[c][i].x1 + threshold, xctx->rect[c][i].y1 + threshold,
                          xctx->rect[c][i].x2 - threshold, xctx->rect[c][i].y2 - threshold))
    {
@@ -440,7 +440,14 @@ static void find_closest_element(double mx, double my, int override_lock)
            xctx->inst[i].instname, xctx->inst[i].x1, xctx->inst[i].y1, xctx->inst[i].x2, xctx->inst[i].y2);
     if( POINTINSIDE(mx, my, xctx->inst[i].x1, xctx->inst[i].y1, xctx->inst[i].x2, xctx->inst[i].y2) )
     {
-      tmp=dist_from_rect(mx, my, xctx->inst[i].xx1, xctx->inst[i].yy1, xctx->inst[i].xx2, xctx->inst[i].yy2);
+      /* bbox with texts */
+      tmp=dist_from_element(mx, my, xctx->inst[i].x1, xctx->inst[i].y1,
+                                    xctx->inst[i].x2, xctx->inst[i].y2);
+      /* bbox without texts */
+      /*
+       * tmp=dist_from_element(mx, my, xctx->inst[i].xx1, xctx->inst[i].yy1,
+       *                               xctx->inst[i].xx2, xctx->inst[i].yy2);
+       */
       if(tmp < d)
       {
         r = i; d = tmp;

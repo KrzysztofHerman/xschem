@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -595,12 +595,12 @@ void hilight_net_pin_mismatches(void)
 
 void hilight_parent_pins(void)
 {
- int rects, i, j, k;
+ int rects, i, j;
  Hilight_hashentry *entry;
  const char *pin_name;
  char *pin_node = NULL;
  char *net_node=NULL;
- int mult, net_mult, inst_number;
+ int net_mult, inst_number;
 
  if(!xctx->hilight_nets) return;
  prepare_netlist_structs(0);
@@ -631,14 +631,27 @@ void hilight_parent_pins(void)
 
  for(j=0;j<rects; ++j)
  {
+  char *translated = NULL;
   char *p_n_s1, *p_n_s2;
+  int k, mult;
   if(!xctx->inst[i].node || !xctx->inst[i].node[j]) continue;
   my_strdup(_ALLOC_ID_, &net_node, expandlabel(xctx->inst[i].node[j], &net_mult));
   dbg(1, "hilight_parent_pins(): net_node=%s\n", net_node);
   pin_name = get_tok_value(xctx->sym[xctx->inst[i].ptr].rect[PINLAYER][j].prop_ptr,"name",0);
   dbg(1, "pin_name=%s\n", pin_name);
   if(!pin_name[0]) continue;
-  my_strdup(_ALLOC_ID_, &pin_node, expandlabel(pin_name, &mult));
+  my_strdup(_ALLOC_ID_, &translated, pin_name);
+  for(k = xctx->currsch; k >= 0; k--) {
+    if(!strpbrk(translated, "@%")) break;
+    translate3(translated, 1, xctx->hier_attr[k].prop_ptr, NULL, NULL, NULL, &translated);
+    dbg(1, "hilight_parent_pins(): xctx->hier_attr[%d].prop_ptr=%s\n", k, xctx->hier_attr[k].prop_ptr);
+    dbg(1, "hilight_parent_pins(): translated=%s\n\n", translated);
+  }
+  my_strdup2(_ALLOC_ID_, &pin_node, expandlabel(eval_expr(translated), &mult));
+  my_free(_ALLOC_ID_, &translated);
+
+
+
   dbg(1, "hilight_parent_pins(): pin_node=%s\n", pin_node);
 
   p_n_s1 = pin_node;
@@ -675,8 +688,7 @@ void hilight_parent_pins(void)
 
 void hilight_child_pins(void)
 {
- int j, k, rects;
- const char *pin_name;
+ int j, rects;
  char *pin_node = NULL;
  char *net_node=NULL;
  Hilight_hashentry *entry;
@@ -710,18 +722,31 @@ void hilight_child_pins(void)
  for(j=0;j<rects; ++j)
  {
   char *p_n_s1, *p_n_s2;
-  dbg(1, "hilight_child_pins(): inst_number=%d\n", inst_number);
+  char *tr_pin_name = NULL;
+  char *pin_name = NULL;
+  int k;
+  dbg(1, "\n\nhilight_child_pins(): inst_number=%d\n", inst_number);
 
   if(!xctx->inst[i].node || !xctx->inst[i].node[j]) continue;
   my_strdup(_ALLOC_ID_, &net_node, expandlabel(xctx->inst[i].node[j], &net_mult));
-  dbg(1, "hilight_child_pins(): net_node=%s\n", net_node);
-  pin_name = get_tok_value(xctx->sym[xctx->inst[i].ptr].rect[PINLAYER][j].prop_ptr,"name",0);
+  dbg(1, "  hilight_child_pins(): net_node=%s\n", net_node);
+  my_strdup2(_ALLOC_ID_, &pin_name,
+       get_tok_value(xctx->sym[xctx->inst[i].ptr].rect[PINLAYER][j].prop_ptr,"name",0));
   if(!pin_name[0]) continue;
-  my_strdup(_ALLOC_ID_, &pin_node, expandlabel(pin_name, &mult));
-  dbg(1, "hilight_child_pins(): pin_node=%s\n", pin_node);
+  for(k = xctx->currsch - 1; k >= 0; k--) {
+    if(!strpbrk(pin_name, "@%")) break;
+    translate3(pin_name, 1, xctx->hier_attr[k].prop_ptr, NULL, NULL, NULL, &pin_name);
+  }
+  my_strdup2(_ALLOC_ID_, &tr_pin_name, eval_expr(pin_name));
+  dbg(1, "  pin_name=%s, currsch=%d\n", pin_name, xctx->currsch);
+  dbg(1, "  tr_pin_name=%s, currsch=%d\n", tr_pin_name, xctx->currsch);
+  my_strdup(_ALLOC_ID_, &pin_node, expandlabel(tr_pin_name, &mult));
+  my_free(_ALLOC_ID_, &tr_pin_name);
+  my_free(_ALLOC_ID_, &pin_name);
+  dbg(1, "  hilight_child_pins(): pin_node=%s\n", pin_node);
   p_n_s1 = pin_node;
   for(k = 1; k<=mult; ++k) {
-    dbg(1, "hilight_child_pins(): looking nth net:%d, k=%d, inst_number=%d, mult=%d\n",
+    dbg(1, "  hilight_child_pins(): looking nth net:%d, k=%d, inst_number=%d, mult=%d\n",
                                (inst_number-1)*mult+k, k, inst_number, mult);
     xctx->currsch--;
     entry = bus_hilight_hash_lookup(find_nth(net_node, ",", "", 0,
@@ -790,7 +815,13 @@ int search(const char *tok, const char *val, int sub, int sel, int match_case, i
  #else
  char *regexp_options = NULL;
  #endif
+ int only_text_search = 0;
 
+ if(!tok) {
+   fprintf(errfp, "search(): warning: null tok key\n");
+   return TCL_ERROR;
+ }
+ if(!strcmp(tok, "txt_ptr")) only_text_search = 1;
  if(!val) {
    fprintf(errfp, "search(): warning: null val key\n");
    return TCL_ERROR;
@@ -819,217 +850,223 @@ int search(const char *tok, const char *val, int sub, int sel, int match_case, i
  }
  has_token = 0;
  prepare_netlist_structs(0);
- bus=bus_search(val); /* searching for a single bit in a bus, like val -> "DATA[13]" */
- for(i=0;i<xctx->instances; ++i) {
-   if(!strcmp(tok,"cell::name")) {
-     has_token = (xctx->inst[i].name != NULL) && xctx->inst[i].name[0];
-     str = xctx->inst[i].name;
-   } else if(!strcmp(tok,"cell::propstring")) {
-     has_token = (str = (xctx->inst[i].ptr+ xctx->sym)->prop_ptr) ? 1 : 0;
-   } else if(!strncmp(tok,"cell::", 6)) { /* cell::xxx looks for xxx in global symbol attributes */
-     my_strdup(_ALLOC_ID_, &tmpname,get_tok_value(xctx->sym[xctx->inst[i].ptr].prop_ptr,tok+6,0));
-     has_token = xctx->tok_size;
-     if(tmpname) {
-       str = tmpname;
+
+ if(!only_text_search) {
+   bus=bus_search(val); /* searching for a single bit in a bus, like val -> "DATA[13]" */
+   for(i=0;i<xctx->instances; ++i) {
+     if(!strcmp(tok,"cell::name")) {
+       has_token = (xctx->inst[i].name != NULL) && xctx->inst[i].name[0];
+       str = xctx->inst[i].name;
+     } else if(!strcmp(tok,"cell::propstring")) {
+       has_token = (str = (xctx->inst[i].ptr+ xctx->sym)->prop_ptr) ? 1 : 0;
+     } else if(!strncmp(tok,"cell::", 6)) { /* cell::xxx looks for xxx in global symbol attributes */
+       my_strdup(_ALLOC_ID_, &tmpname,get_tok_value(xctx->sym[xctx->inst[i].ptr].prop_ptr,tok+6,0));
+       has_token = xctx->tok_size;
+       if(tmpname) {
+         str = tmpname;
+       } else {
+         str = empty_string;
+       }
+     } else if(!strcmp(tok,"propstring")) {
+       has_token = (xctx->inst[i].prop_ptr != NULL) && xctx->inst[i].prop_ptr[0];
+       str = xctx->inst[i].prop_ptr;
      } else {
-       str = empty_string;
+       str = get_tok_value(xctx->inst[i].prop_ptr, tok,0);
+       has_token = xctx->tok_size;
      }
-   } else if(!strcmp(tok,"propstring")) {
-     has_token = (xctx->inst[i].prop_ptr != NULL) && xctx->inst[i].prop_ptr[0];
-     str = xctx->inst[i].prop_ptr;
-   } else {
-     str = get_tok_value(xctx->inst[i].prop_ptr, tok,0);
-     has_token = xctx->tok_size;
-   }
-   dbg(1, "search(): inst=%d, tok=%s, val=%s \n", i,tok, str);
-
-   if(bus && sub) {
-    dbg(1, "search(): doing substr search on bus sig:%s inst=%d tok=%s val=%s\n", str,i,tok,val);
-    str=expandlabel(str,&tmp);
-   }
-   if(str && has_token) {
-     #ifdef __unix__
-     if( (!sub && !regexec(&re, str,0 , NULL, 0) ) ||           /* 20071120 regex instead of strcmp */
-         (sub && !bus && !comparefn(str, val)) || (sub && bus && substrfn(str,val)))
-     #else
-     if( (!sub && win_regexec(regexp_options, val, str)) ||
-         (sub && !bus && !comparefn(str, val)) || (sub && bus && substrfn(str,val)))
-     #endif
-     {
-       if(!sel) {
-         type = (xctx->inst[i].ptr+ xctx->sym)->type;
-         if( !strcmp(tok, "lab") && type && xctx->inst[i].node && IS_LABEL_SH_OR_PIN(type) ) {
-           bus_hilight_hash_lookup(xctx->inst[i].node[0], col, XINSERT_NOREPLACE); /* sets xctx->hilight_nets=1; */
-         } else {
-           dbg(1, "search(): setting hilight flag on inst %d\n",i);
-           /* xctx->hilight_nets=1; */  /* done in hilight_hash_lookup() */
-           xctx->inst[i].color = col;
-           inst_hilight_hash_lookup(i, col, XINSERT_NOREPLACE);
+     dbg(1, "search(): inst=%d, tok=%s, val=%s \n", i,tok, str);
+  
+     if(bus && sub) {
+      dbg(1, "search(): doing substr search on bus sig:%s inst=%d tok=%s val=%s\n", str,i,tok,val);
+      str=expandlabel(str,&tmp);
+     }
+     if(str && has_token) {
+       #ifdef __unix__
+       if( (!sub && !regexec(&re, str,0 , NULL, 0) ) ||           /* 20071120 regex instead of strcmp */
+           (sub && !bus && !comparefn(str, val)) || (sub && bus && substrfn(str,val)))
+       #else
+       if( (!sub && win_regexec(regexp_options, val, str)) ||
+           (sub && !bus && !comparefn(str, val)) || (sub && bus && substrfn(str,val)))
+       #endif
+       {
+         if(!sel) {
+           type = (xctx->inst[i].ptr+ xctx->sym)->type;
+           if( !strcmp(tok, "lab") && type && xctx->inst[i].node && IS_LABEL_SH_OR_PIN(type) ) {
+             bus_hilight_hash_lookup(xctx->inst[i].node[0], col, XINSERT_NOREPLACE); /* sets xctx->hilight_nets=1; */
+           } else {
+             dbg(1, "search(): setting hilight flag on inst %d\n",i);
+             /* xctx->hilight_nets=1; */  /* done in hilight_hash_lookup() */
+             xctx->inst[i].color = col;
+             inst_hilight_hash_lookup(i, col, XINSERT_NOREPLACE);
+           }
          }
-       }
-       if(sel==1) {
-         xctx->inst[i].sel = SELECTED;
-         set_first_sel(ELEMENT, i, 0);
-         xctx->need_reb_sel_arr=1;
-       }
-       if(sel==-1) { /* 20171211 unselect */
-         xctx->inst[i].sel = 0;
-         xctx->need_reb_sel_arr=1;
-      }
-      found  = 1;
-     }
-   }
- }
- for(i=0;i<xctx->wires; ++i) {
-   str = get_tok_value(xctx->wire[i].prop_ptr, tok,0);
-   if(xctx->tok_size ) {
-     #ifdef __unix__
-     if(   (!regexec(&re, str,0 , NULL, 0) && !sub )  ||       /* 20071120 regex instead of strcmp */
-           ( !comparefn(str, val) &&  sub ) )
-     #else
-       if(   (win_regexec(regexp_options, val, str) && !sub )  ||       /* 20071120 regex instead of strcmp */
-           ( !comparefn(str, val) &&  sub ) )
-
-     #endif
-     {
-       if(!sel) {
-         bus_hilight_hash_lookup(xctx->wire[i].node, col, XINSERT_NOREPLACE); /* sets xctx->hilight_nets = 1 */
-       }
-       if(sel==1) {
-         xctx->wire[i].sel = SELECTED;
-         set_first_sel(WIRE, i, 0);
-         xctx->need_reb_sel_arr=1;
-       }
-       if(sel==-1) {
-         xctx->wire[i].sel = 0;
-         xctx->need_reb_sel_arr=1;
-       }
-       found = 1;
-     }
-     else {
-       dbg(2, "search():  not found wire=%d, tok=%s, val=%s search=%s\n", i,tok, str,val);
-     }
-   }
- }
- if(!sel && xctx->hilight_nets) propagate_hilights(1, 0, XINSERT_NOREPLACE);
- if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->lines[c]; ++i) {
-   str = get_tok_value(xctx->line[c][i].prop_ptr, tok,0);
-   if(xctx->tok_size) {
-     #ifdef __unix__
-     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #else
-     if( (win_regexec(regexp_options, val, str) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #endif
-     {
-       if(sel==1) {
-         xctx->line[c][i].sel = SELECTED;
-         set_first_sel(LINE, i, c);
-         xctx->need_reb_sel_arr=1;
-       }
-       if(sel==-1) {
-         xctx->line[c][i].sel = 0;
-         xctx->need_reb_sel_arr=1;
-       }
-       found = 1;
-     }
-     else {
-       dbg(2, "search(): not found line=%d col=%d, tok=%s, val=%s search=%s\n",
-                           i, c, tok, str, val);
-     }
-   }
- }
- if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->rects[c]; ++i) {
-   str = get_tok_value(xctx->rect[c][i].prop_ptr, tok,0);
-   if(xctx->tok_size) {
-     #ifdef __unix__
-     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #else
-     if( (win_regexec(regexp_options, val, str) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #endif
-     {
          if(sel==1) {
-           xctx->rect[c][i].sel = SELECTED;
-           set_first_sel(xRECT, i, c);
+           xctx->inst[i].sel = SELECTED;
+           set_first_sel(ELEMENT, i, 0);
+           xctx->need_reb_sel_arr=1;
+         }
+         if(sel==-1) { /* 20171211 unselect */
+           xctx->inst[i].sel = 0;
+           xctx->need_reb_sel_arr=1;
+        }
+        found  = 1;
+       }
+     }
+   }
+   for(i=0;i<xctx->wires; ++i) {
+     str = get_tok_value(xctx->wire[i].prop_ptr, tok,0);
+     if(xctx->tok_size ) {
+       #ifdef __unix__
+       if(   (!regexec(&re, str,0 , NULL, 0) && !sub )  ||       /* 20071120 regex instead of strcmp */
+             ( !comparefn(str, val) &&  sub ) )
+       #else
+         if(   (win_regexec(regexp_options, val, str) && !sub )  ||       /* 20071120 regex instead of strcmp */
+             ( !comparefn(str, val) &&  sub ) )
+  
+       #endif
+       {
+         if(!sel) {
+           bus_hilight_hash_lookup(xctx->wire[i].node, col, XINSERT_NOREPLACE); /* sets xctx->hilight_nets = 1 */
+         }
+         if(sel==1) {
+           xctx->wire[i].sel = SELECTED;
+           set_first_sel(WIRE, i, 0);
            xctx->need_reb_sel_arr=1;
          }
          if(sel==-1) {
-           xctx->rect[c][i].sel = 0;
+           xctx->wire[i].sel = 0;
            xctx->need_reb_sel_arr=1;
          }
          found = 1;
-     }
-     else {
-       dbg(2, "search(): not found rect=%d col=%d, tok=%s, val=%s search=%s\n",
-                           i, c, tok, str, val);
+       }
+       else {
+         dbg(2, "search():  not found wire=%d, tok=%s, val=%s search=%s\n", i,tok, str,val);
+       }
      }
    }
- }
-
- if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->arcs[c]; ++i) {
-   str = get_tok_value(xctx->arc[c][i].prop_ptr, tok,0);
-   if(xctx->tok_size) {
-     #ifdef __unix__
-     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #else
-     if( (win_regexec(regexp_options, val, str) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #endif
-     {
+   if(!sel && xctx->hilight_nets) propagate_hilights(1, 0, XINSERT_NOREPLACE);
+   if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->lines[c]; ++i) {
+     str = get_tok_value(xctx->line[c][i].prop_ptr, tok,0);
+     if(xctx->tok_size) {
+       #ifdef __unix__
+       if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #else
+       if( (win_regexec(regexp_options, val, str) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #endif
+       {
          if(sel==1) {
-           xctx->arc[c][i].sel = SELECTED;
-           set_first_sel(ARC, i, c);
+           xctx->line[c][i].sel = SELECTED;
+           set_first_sel(LINE, i, c);
            xctx->need_reb_sel_arr=1;
          }
          if(sel==-1) {
-           xctx->arc[c][i].sel = 0;
+           xctx->line[c][i].sel = 0;
            xctx->need_reb_sel_arr=1;
          }
          found = 1;
-     }
-     else {
-       dbg(2, "search(): not found arc=%d col=%d, tok=%s, val=%s search=%s\n",
-                           i, c, tok, str, val);
-     }
-   }
- }
-
- if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->polygons[c]; ++i) {
-   str = get_tok_value(xctx->poly[c][i].prop_ptr, tok,0);
-   if(xctx->tok_size) {
-     #ifdef __unix__
-     if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #else
-     if( (win_regexec(regexp_options, val, str) && !sub ) ||
-         ( !comparefn(str, val) &&  sub ))
-     #endif
-     {
-         if(sel==1) {
-           xctx->poly[c][i].sel = SELECTED;
-           set_first_sel(POLYGON, i, c);
-           xctx->need_reb_sel_arr=1;
-         }
-         if(sel==-1) {
-           xctx->poly[c][i].sel = 0;
-           xctx->need_reb_sel_arr=1;
-         }
-         found = 1;
-     }
-     else {
-       dbg(2, "search(): not found arc=%d col=%d, tok=%s, val=%s search=%s\n",
-                           i, c, tok, str, val);
+       }
+       else {
+         dbg(2, "search(): not found line=%d col=%d, tok=%s, val=%s search=%s\n",
+                             i, c, tok, str, val);
+       }
      }
    }
- }
-
+   if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->rects[c]; ++i) {
+     str = get_tok_value(xctx->rect[c][i].prop_ptr, tok,0);
+     if(xctx->tok_size) {
+       #ifdef __unix__
+       if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #else
+       if( (win_regexec(regexp_options, val, str) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #endif
+       {
+           if(sel==1) {
+             xctx->rect[c][i].sel = SELECTED;
+             set_first_sel(xRECT, i, c);
+             xctx->need_reb_sel_arr=1;
+           }
+           if(sel==-1) {
+             xctx->rect[c][i].sel = 0;
+             xctx->need_reb_sel_arr=1;
+           }
+           found = 1;
+       }
+       else {
+         dbg(2, "search(): not found rect=%d col=%d, tok=%s, val=%s search=%s\n",
+                             i, c, tok, str, val);
+       }
+     }
+   }
+  
+   if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->arcs[c]; ++i) {
+     str = get_tok_value(xctx->arc[c][i].prop_ptr, tok,0);
+     if(xctx->tok_size) {
+       #ifdef __unix__
+       if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #else
+       if( (win_regexec(regexp_options, val, str) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #endif
+       {
+           if(sel==1) {
+             xctx->arc[c][i].sel = SELECTED;
+             set_first_sel(ARC, i, c);
+             xctx->need_reb_sel_arr=1;
+           }
+           if(sel==-1) {
+             xctx->arc[c][i].sel = 0;
+             xctx->need_reb_sel_arr=1;
+           }
+           found = 1;
+       }
+       else {
+         dbg(2, "search(): not found arc=%d col=%d, tok=%s, val=%s search=%s\n",
+                             i, c, tok, str, val);
+       }
+     }
+   }
+  
+   if(sel) for(c = 0; c < cadlayers; ++c) for(i=0;i<xctx->polygons[c]; ++i) {
+     str = get_tok_value(xctx->poly[c][i].prop_ptr, tok,0);
+     if(xctx->tok_size) {
+       #ifdef __unix__
+       if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #else
+       if( (win_regexec(regexp_options, val, str) && !sub ) ||
+           ( !comparefn(str, val) &&  sub ))
+       #endif
+       {
+           if(sel==1) {
+             xctx->poly[c][i].sel = SELECTED;
+             set_first_sel(POLYGON, i, c);
+             xctx->need_reb_sel_arr=1;
+           }
+           if(sel==-1) {
+             xctx->poly[c][i].sel = 0;
+             xctx->need_reb_sel_arr=1;
+           }
+           found = 1;
+       }
+       else {
+         dbg(2, "search(): not found arc=%d col=%d, tok=%s, val=%s search=%s\n",
+                             i, c, tok, str, val);
+       }
+     }
+   }
+ } /* if(!only_text_search) */
 
  if(sel) for(i=0;i<xctx->texts; ++i) {
-   str = get_tok_value(xctx->text[i].prop_ptr, tok,0);
+   if(!strcmp(tok, "txt_ptr")) {
+     str = xctx->text[i].txt_ptr;
+     if(!str) continue;
+     xctx->tok_size = 1;
+   } else str = get_tok_value(xctx->text[i].prop_ptr, tok,0);
    if(xctx->tok_size) {
      #ifdef __unix__
      if( (!regexec(&re, str,0 , NULL, 0) && !sub ) ||
@@ -1058,10 +1095,11 @@ int search(const char *tok, const char *val, int sub, int sel, int match_case, i
  }
 
  if(found) {
-  if(tclgetboolvar("incr_hilight")) incr_hilight_color();
+   if(sel == 0  && tclgetboolvar("incr_hilight")) incr_hilight_color();
    if(sel == -1) {
      if(dr) draw();
    }
+   else
    if(sel) {
      rebuild_selected_array(); /* sets or clears xctx->ui_state SELECTION flag */
      if(dr) draw_selection(xctx->gc[SELLAYER], 0);
@@ -1200,8 +1238,8 @@ static void send_net_to_bespice(int simtype, const char *node)
     c = get_color(xctx->hilight_color);
     sprintf(color_str, "#%02x%02x%02x", xctx->xcolor_array[c].red>>8, xctx->xcolor_array[c].green>>8,
                                        xctx->xcolor_array[c].blue>>8);
-    expanded_tok = expandlabel(tok, &tok_mult);
     my_strdup2(_ALLOC_ID_, &p, xctx->sch_path[xctx->currsch]+1);
+    expanded_tok = expandlabel(tok, &tok_mult);
     for(k=1; k<=tok_mult; ++k) {
       my_strdup(_ALLOC_ID_, &t, find_nth(expanded_tok, ",", "", 0, k));
       /* bespice command syntax :
@@ -1269,12 +1307,12 @@ static void send_net_to_gaw(int simtype, const char *node)
     c = get_color(xctx->hilight_color);
     sprintf(color_str, "%02x%02x%02x", xctx->xcolor_array[c].red>>8, xctx->xcolor_array[c].green>>8,
                                        xctx->xcolor_array[c].blue>>8);
-    expanded_tok = expandlabel(tok, &tok_mult);
     tcleval("setup_tcp_gaw");
     if(tclresult()[0] == '0') return;
     my_strdup2(_ALLOC_ID_, &p, xctx->sch_path[xctx->currsch]+1);
     path = p;
     strtolower(path);
+    expanded_tok = expandlabel(tok, &tok_mult);
     for(k=1; k<=tok_mult; ++k) {
       my_strdup(_ALLOC_ID_, &t, find_nth(expanded_tok, ",", "", 0, k));
       strtolower(t);
@@ -1307,8 +1345,8 @@ static void send_current_to_bespice(int simtype, const char *node)
   c = get_color(xctx->hilight_color);
   sprintf(color_str, "#%02x%02x%02x", xctx->xcolor_array[c].red>>8, xctx->xcolor_array[c].green>>8,
                                      xctx->xcolor_array[c].blue>>8);
-  expanded_tok = expandlabel(tok, &tok_mult);
   my_strdup2(_ALLOC_ID_, &p, xctx->sch_path[xctx->currsch]+1);
+  expanded_tok = expandlabel(tok, &tok_mult);
   for(k=1; k<=tok_mult; ++k) {
     my_strdup(_ALLOC_ID_, &t, find_nth(expanded_tok, ",", "", 0, k));
     /* bespice command syntax :
@@ -1337,7 +1375,6 @@ static void send_current_to_graph(char **s, int simtype, const char *node)
   if(!node || !node[0]) return;
   tok = node;
   c = get_color(xctx->hilight_color);
-  expanded_tok = expandlabel(tok, &tok_mult);
   my_strdup2(_ALLOC_ID_, &p, xctx->sch_path[xctx->currsch]+1);
   path = p;
   start_level = sch_waves_loaded();
@@ -1351,6 +1388,7 @@ static void send_current_to_graph(char **s, int simtype, const char *node)
   }
   strtolower(path);
   there_is_hierarchy = (strstr(path, ".") != NULL);
+  expanded_tok = expandlabel(tok, &tok_mult);
   for(k=1; k<=tok_mult; ++k) {
     my_strdup(_ALLOC_ID_, &t, find_nth(expanded_tok, ",", "", 0, k));
     strtolower(t);
@@ -1384,13 +1422,13 @@ static void send_current_to_gaw(int simtype, const char *node)
   c = get_color(xctx->hilight_color);
   sprintf(color_str, "%02x%02x%02x", xctx->xcolor_array[c].red>>8, xctx->xcolor_array[c].green>>8,
                                      xctx->xcolor_array[c].blue>>8);
-  expanded_tok = expandlabel(tok, &tok_mult);
   tcleval("setup_tcp_gaw");
   if(tclresult()[0] == '0') return;
   my_strdup2(_ALLOC_ID_, &p, xctx->sch_path[xctx->currsch]+1);
   path = p;
   strtolower(path);
   there_is_hierarchy = (xctx->currsch > 0);
+  expanded_tok = expandlabel(tok, &tok_mult);
   for(k=1; k<=tok_mult; ++k) {
     my_strdup(_ALLOC_ID_, &t, find_nth(expanded_tok, ",", "", 0, k));
     strtolower(t);
@@ -1470,6 +1508,8 @@ void propagate_hilights(int set, int clear, int mode)
       }
     /* ... else hilight/clear pin/label instances attached to hilight nets */
     } else if(type && xctx->inst[i].node && IS_LABEL_SH_OR_PIN(type) ) {
+      dbg(1, "propagate_hilights(): inst:%s, node=%s\n",
+               xctx->inst[i].instname, xctx->inst[i].node[0]);
       entry=bus_hilight_hash_lookup( xctx->inst[i].node[0], 0, XLOOKUP);
       if(entry && set) {
         xctx->inst[i].color = entry->value;
@@ -1731,7 +1771,7 @@ void free_simdata(void)
 static void propagate_logic()
 {
   /* char *propagated_net=NULL; */
-  int found, iter = 0 /* , mult */;
+  int found;
   int i, j, npin;
   int propagate;
   Hilight_hashentry  *entry;
@@ -1846,7 +1886,6 @@ static void propagate_logic()
     /* get out from infinite loops (circuit is oscillating) */
     tclvareval("update; expr {$::tclstop == 1}", NULL);
     if( tclresult()[0] == '1') break;
-    ++iter;
   } /* while(1) */
   tclvareval(xctx->top_path, ".statusbar.12 configure -text {}", NULL);
   /* my_free(_ALLOC_ID_, &propagated_net); */
@@ -2267,7 +2306,7 @@ void draw_hilight_net(int on_window)
         draw_symbol(ADD, col, i, c, 0, 0, 0.0, 0.0);
         if(c == cadlayers - 1) draw_symbol(ADD, col, i, c + 1, 0, 0, 0.0, 0.0); /* draw texts */
       }
-      filledrect(col, END, 0.0, 0.0, 0.0, 0.0, 2, -1, -1); /* last parameter must be 2! */
+      filledrect(col, END, 0.0, 0.0, 0.0, 0.0, 2, -1, -1); /* fill parameter must be 2! */
       drawarc(col, END, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0);
       drawrect(col, END, 0.0, 0.0, 0.0, 0.0, 0.0, 0, -1, -1);
       drawline(col, END, 0.0, 0.0, 0.0, 0.0, 0.0, 0, NULL);

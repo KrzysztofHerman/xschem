@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -364,8 +364,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         }
       }
       if(argc > 2) {
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
       } else {
         my_snprintf(f, S(f), "%s/%s.raw",  tclgetvar("netlist_dir"), get_cell(xctx->sch[xctx->currsch], 0));
@@ -505,6 +504,29 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       Tcl_ResetResult(interp);
     }
 
+    /* cache_schematic what sch_name
+     *   what:
+     *     1: initialize, alloc data
+     *     2: cache current schematic
+     *     3: lookup schematic indicated in `sch_name` and switch to it
+     *     4: switch back to original schematic
+     *     5: free data */
+    else if(!strcmp(argv[1], "cache_schematic"))
+    {
+      const char *sch_name = NULL;
+      int what = 0;
+      if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
+      if(argc < 3) {
+        Tcl_SetResult(interp, "xschem cache_schematic: missing arguments.", TCL_STATIC);
+        return TCL_ERROR;
+      }
+      if(argc > 3) {
+        sch_name = argv[3];
+      }
+      what = atoi(argv[2]);
+      cache_schematic(what, sch_name);
+    }
+
     /* case_insensitive 1|0
      *   Set case insensitive symbol lookup. Use only on case insensitive filesystems */
     else if(!strcmp(argv[1], "case_insensitive"))
@@ -586,7 +608,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           my_strncpy(sympath, abs_sym_path(name, ""), S(sympath));
         }
         if(!stat(sympath, &buf)) { /* file exists */
-          if(xctx->time_last_modify < buf.st_mtime) {
+          if(xctx->time_last_modify != -1 && xctx->time_last_modify < buf.st_mtime) {
             my_mstrcat(_ALLOC_ID_, &res, "Warning: symbol ", sympath, " is newer than schematic\n", NULL);
           }
         } else { /* not found */
@@ -713,8 +735,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       int ret = 0;
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc > 2) {
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         ret = compare_schematics(f);
       }
@@ -912,9 +933,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         }
         if(argc > 2) {
           int n = atoi(argv[2]);
-          ret = descend_schematic(n, 0, 0, set_title);
+          ret = descend_schematic(n, 2, 0, set_title);
         } else {
-          ret = descend_schematic(0, 0, 0, set_title);
+          ret = descend_schematic(0, 2, 0, set_title);
         }
       }
       Tcl_SetResult(interp, dtoa(ret), TCL_VOLATILE);
@@ -1067,8 +1088,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       char f[PATH_MAX + 100];
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc > 2) {
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         embed_rawfile(f);
       }
@@ -1582,11 +1602,11 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
               if(c >=0 && c < cadlayers) {
                 Tcl_SetResult(interp, my_itoa(xctx->lines[c]),TCL_VOLATILE);
               } else {
-                Tcl_SetResult(interp, "xschem get rects n: layer number out of range", TCL_STATIC);
+                Tcl_SetResult(interp, "xschem get lines n: layer number out of range", TCL_STATIC);
                 return TCL_ERROR;
               }
             } else {
-              Tcl_SetResult(interp, "xschem get rects n: give a layer number", TCL_STATIC);
+              Tcl_SetResult(interp, "xschem get lines n: give a layer number", TCL_STATIC);
               return TCL_ERROR;
             }
           }
@@ -2168,6 +2188,29 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       Tcl_SetResult(interp, filename, TCL_VOLATILE);
     }
 
+    /* get_sym_name inst [ndir] [ext] [abs_path]
+     * get symbol referenced by instance `inst`, either by the instance `schematic` attribute
+     * or by looking in instance symbol reference (xctx->inst[i].name)
+     * ndir: specify how many directory components return in the result
+     * ext: append extension if not zero
+     * abs_path: get full path as found in library search paths */
+    else if(!strcmp(argv[1], "get_sym_name") )
+    {
+      int inst = -1, abs_path = 0, ndir=9999, ext = 1;
+      if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
+      if(argc < 3) {Tcl_SetResult(interp, "Missing arguments", TCL_STATIC);return TCL_ERROR;}
+      inst = get_instance(argv[2]);
+      if(inst < 0) {
+        Tcl_SetResult(interp, "xschem get_sym_name: instance not found", TCL_STATIC);
+        return TCL_ERROR;
+      }
+
+      if(argc > 3) {ndir = atoi(argv[3]);}
+      if(argc > 4) {ext = atoi(argv[4]);}
+      if(argc > 5) {abs_path = atoi(argv[5]);}
+      Tcl_SetResult(interp, (char *)get_sym_name(inst, ndir, ext, abs_path), TCL_VOLATILE);
+    }
+
     /* get_sym_type symname
      *   get "type" value from global attributes of symbol,
      *   looking frst in loaded symbols, then looking in symbol file
@@ -2394,7 +2437,19 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     {
       xschem_cmd_help(argc, argv);
     }
-
+    /* hier_attr
+     *   Debug command */
+    else if(!strcmp(argv[1], "hier_attr")) {
+      int k;
+      char s[500];
+      if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
+      for(k = xctx->currsch; k >= 0; k--) {
+        if(xctx->hier_attr[k].prop_ptr) {
+          my_snprintf(s, S(s), "\nlevel=%d, attr=\n%s\n", k, xctx->hier_attr[k].prop_ptr);
+          Tcl_AppendResult(interp, s, NULL);
+        }
+      }
+    }
     /* hier_psprint [file]
      *   Hierarchical postscript / pdf print
      *   if 'file' is not given show a fileselector dialog box */
@@ -3073,7 +3128,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       }
     }
 
-    /* load [-nosymbols|-gui|-noundoreset|-nofullzoom|-keep_symbols] f
+    /* load [-nosymbols|-gui|-noundoreset|-nofullzoom|-nodraw|-keep_symbols] f
      *   Load a new file 'f'.
      *   '-gui': ask to save modified file or warn if opening an already
      *       open file or opening a new(not existing) file.
@@ -3139,8 +3194,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           i--;
           lastopened = 0;
         } else {
-          my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[i], home_dir);
-          tcleval(f);
+          tclvareval("cleanup_path {", argv[i], "}", NULL);
           my_strncpy(f, tclresult(), S(f));
         }
         if(force || !has_x || !xctx->modified  || save(1, 0) != -1 ) { /* save(1)==-1 --> user cancel */
@@ -3180,7 +3234,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
             dbg(1, "scheduler: undo_reset=%d\n", undo_reset);
 
             if(first_loaded) {
-              ret = new_schematic("create", "noconfirm", f, 1);
+              int dr = nofullzoom * 2 + !nodraw;
+              ret = new_schematic("create", "noconfirm", f, dr);
               if(undo_reset) {
                 tclvareval("update_recent_file {", f, "}", NULL);
               }
@@ -3224,8 +3279,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           } else if(!strcmp(argv[i], "-lastopened")) {
             my_strncpy(f, tcleval("get_lastopened"), S(f));
           } else if(!is_from_web(argv[i])) {
-            my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[i], home_dir);
-            tcleval(f);
+            tclvareval("cleanup_path {", argv[i], "}", NULL);
             /* tclvareval("file normalize {", tclresult(), "}", NULL); */
             my_strncpy(f, abs_sym_path(tclresult(), ""), S(f));
           } else {
@@ -3278,8 +3332,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         char f[PATH_MAX + 100];
         FILE *fp;
 
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         fp = fopen(f, "w");
         if(fp) errfp = fp;
@@ -3455,8 +3508,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         merge_file(0, "");  /* 2nd param not used for merge 25122002 */
       }
       else {
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         merge_file(0, f);
       }
@@ -3596,12 +3648,14 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       const char *fname = NULL;
       const char *path;
       char savedir[PATH_MAX];
+      char save_netlistname[PATH_MAX];
       int done_netlist = 0;
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       yyparse_error = 0;
       my_strdup(_ALLOC_ID_, &saveshow, tclgetvar("show_infowindow_after_netlist"));
       set_netlist_dir(0, NULL);
 
+      my_strncpy(save_netlistname, xctx->netlist_name, S(save_netlistname));
       my_strncpy(savedir, tclgetvar("netlist_dir"), S(savedir));
       for(i = 2; i < argc; i++) {
         if(argv[i][0] == '-') {
@@ -3649,10 +3703,6 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           if(has_x) tcleval("tk_messageBox -type ok -parent [xschem get topwindow] "
                             "-message {Please Set netlisting mode (Options menu)}");
         tclsetboolvar("keep_symbols", save_keep);
-
-        if(erc == 0) {
-          my_strncpy(xctx->netlist_name, "", S(xctx->netlist_name));
-        }
       }
       else {
          if(has_x) tcleval("alert_ {Can not write into the netlist directory. Please check} {}");
@@ -3673,6 +3723,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       tclsetvar("show_infowindow_after_netlist", saveshow);
       tcleval("eval_netlist_postprocess");
       set_netlist_dir(1, savedir);
+      my_strncpy(xctx->netlist_name, save_netlistname, S(xctx->netlist_name));
       if(done_netlist) {
         if(messages) {
           Tcl_SetResult(interp, xctx->infowindow_text, TCL_VOLATILE);
@@ -3691,8 +3742,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc > 2) {
         char f[PATH_MAX + 100];
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         new_xschem_process(f, 0);
       } else new_xschem_process("", 0);
@@ -3725,13 +3775,12 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc > 2) {
 
-        if(argc >= 6 && argv[5][0] == '0') dr = 0;
+        if(argc >= 6 ) dr = atoi(argv[5]);
         if(argc == 3) r = new_schematic(argv[2], NULL, NULL, 1);
         else if(argc == 4) r = new_schematic(argv[2], argv[3], NULL, 1);
         else if(argc >= 5) {
           char f[PATH_MAX + 100];
-          my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[4], home_dir);
-          tcleval(f);
+          tclvareval("cleanup_path {", argv[4], "}", NULL);
           my_strncpy(f, abs_sym_path(tclresult(), ""), S(f));
           r = new_schematic(argv[2], argv[3], f, dr);
         }
@@ -3946,8 +3995,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       else if(argc == 4) res = preview_window(argv[2], argv[3], NULL);
       else if(argc == 5) {
         char f[PATH_MAX + 100];
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[4], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[4], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         res = preview_window(argv[2], argv[3], f);
       }
@@ -4620,8 +4668,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         tcleval("array unset ngspice::ngspice_data");
         extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         /* free_rawfile(&xctx->raw, 0, 0); */
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         if(argc > 5) {
           sweep1 = atof_spice(argv[4]);
@@ -4904,6 +4951,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       int sym_number = -1;
       char *subst = NULL;
       int inst;
+      char *res = NULL;
 
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc < 3) {
@@ -4924,7 +4972,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       hash_names(inst, XDELETE);
       set_inst_prop(inst);
 
-      my_strdup2(_ALLOC_ID_, &translated_sym, translate(inst, xctx->inst[inst].name));
+      my_strdup2(_ALLOC_ID_, &translated_sym, translate(inst, xctx->inst[inst].name, &res));
+      my_free(_ALLOC_ID_, &res);
       sym_number=match_symbol(translated_sym);
 
       if(sym_number > 0) {
@@ -5098,24 +5147,25 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     {
       const char *fptr;
       char f[PATH_MAX + 100];
+      int saved = 0;
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
 
       if(argc > 2) {
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
       }
       if(argc > 3) {
         fptr = !strcmp(f, "") ? NULL : f;
-        if(!strcmp(argv[3], "schematic")) saveas(fptr, SCHEMATIC);
-        else if(!strcmp(argv[3], "symbol")) saveas(fptr, SYMBOL);
-        else saveas(fptr, SCHEMATIC);
+        if(!strcmp(argv[3], "schematic")) saved = saveas(fptr, SCHEMATIC);
+        else if(!strcmp(argv[3], "symbol")) saved = saveas(fptr, SYMBOL);
+        else saved = saveas(fptr, SCHEMATIC);
       }
       else if(argc > 2) {
         fptr = !strcmp(f, "") ? NULL : f;
-        saveas(fptr, SCHEMATIC);
+        saved = saveas(fptr, SCHEMATIC);
       }
-      else saveas(NULL, SCHEMATIC);
+      else saved = saveas(NULL, SCHEMATIC);
+      Tcl_SetResult(interp, my_itoa(saved), TCL_VOLATILE);
     }
 
     /* sch_pinlist
@@ -5178,12 +5228,14 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
      *      1 : select matching instances
      *     -1 : unselect matching instances
      *   'tok' set as:
+             <attr> : will search for 'val' in instance attribute 'attr'
      *       propstring : will search for 'val' in the entire
      *       *instance* attribute string.
+     *       txt_ptr : this is used to search only the txt_ptr string of text pbjects
      *       cell::propstring : will search for 'val' in the entire
      *       *symbol* attribute string.
      *       cell::name : will search for 'val' in the symbol name
-     *       cell::<attr> will search for 'val' in symbol attribute 'attr'
+     *       cell::<attr> : will search for 'val' in symbol attribute 'attr'
      *         example: xschem search regex 0 cell::template GAIN=100
      *    if 'no_match_case' is specified do not consider case sensitivity in search
      *    if 'nodraw' is specified do not draw search result
@@ -5364,6 +5416,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     else if(!strcmp(argv[1], "select_inside"))
     {
       int sel = SELECTED;
+      int itexts = tclgetboolvar("inst_texts_in_area_select");
       double x1, y1, x2, y2;
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc > 6 && argv[6][0] == '0') sel = 0;
@@ -5371,8 +5424,28 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       y1 = atof(argv[3]);
       x2 = atof(argv[4]);
       y2 = atof(argv[5]);
-      select_inside(tclgetboolvar("enable_stretch"), x1, y1, x2, y2, sel);
+      select_inside(tclgetboolvar("enable_stretch"), itexts, x1, y1, x2, y2, sel);
       Tcl_ResetResult(interp);
+    }
+
+    /* selected_rect
+     *  Return list of {color index} of selected rects */
+    else if(!strcmp(argv[1], "selected_rect"))
+    {
+      int n, i, c, first = 1;
+      char cstr[40];
+      if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
+      rebuild_selected_array();
+      for(n=0; n < xctx->lastsel; ++n) {
+        if(xctx->sel_array[n].type == xRECT) {
+          i = xctx->sel_array[n].n;
+          c = xctx->sel_array[n].col;
+          my_snprintf(cstr, S(cstr), "%d", c);
+          if(first == 0)  Tcl_AppendResult(interp, " ", NULL);
+          Tcl_AppendResult(interp, "{", cstr, " ", my_itoa(i), "}", NULL);
+          first = 0;
+        }
+      }
     }
 
     /* selected_set [what]
@@ -5416,6 +5489,22 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           i = xctx->sel_array[n].n;
           if(first == 0)  Tcl_AppendResult(interp, " ", NULL);
           Tcl_AppendResult(interp, "{", xctx->inst[i].instname, "}", NULL);
+          first = 0;
+        }
+      }
+    }
+    /* selected_text
+     *  Return list of selected texts */
+    else if(!strcmp(argv[1], "selected_text"))
+    {
+      int n, i, first = 1;
+      if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
+      rebuild_selected_array();
+      for(n=0; n < xctx->lastsel; ++n) {
+        if(xctx->sel_array[n].type == xTEXT) {
+          i = xctx->sel_array[n].n;
+          if(first == 0)  Tcl_AppendResult(interp, " ", NULL);
+          Tcl_AppendResult(interp, my_itoa(i), NULL);
           first = 0;
         }
       }
@@ -5801,12 +5890,14 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           return TCL_ERROR;
         }
         if((inst = get_instance(argv[3])) < 0 ) {
-          Tcl_SetResult(interp, "xschem setprop: instance not found", TCL_STATIC);
+          Tcl_AppendResult(interp, "xschem setprop: instance not found:", argv[3],
+                                   " - ", xctx->current_name, NULL);
           return TCL_ERROR;
         } else {
           char *translated_sym = NULL;
           int sym_number = -1;
-          char *subst = NULL, *old_name = NULL;;
+          char *subst = NULL, *old_name = NULL;
+          char *res = NULL;
 
           if(!fast) {
             symbol_bbox(inst, &xctx->inst[inst].x1, &xctx->inst[inst].y1, &xctx->inst[inst].x2, &xctx->inst[inst].y2);
@@ -5840,7 +5931,8 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
           if(old_name) {
             update_attached_floaters(old_name, inst, 0);
           }
-          my_strdup2(_ALLOC_ID_, &translated_sym, translate(inst, xctx->inst[inst].name));
+          my_strdup2(_ALLOC_ID_, &translated_sym, translate(inst, xctx->inst[inst].name, &res));
+          my_free(_ALLOC_ID_, &res);
           sym_number=match_symbol(translated_sym);
 
           if(sym_number > 0) {
@@ -6205,10 +6297,10 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     /* switch [window_path |schematic_name]
      *   Switch context to indicated window path or schematic name
      *   returns 0 if switch was successfull or 1 in case of errors
-     *   if "previous" given as window path switch to previously active tab
-     *   (only for tabbed interface)
      *   (no tabs/windows present or no matching win_path / schematic name
      *   found).
+     *   if "previous" given as window path switch to previously active tab
+     *   (only for tabbed interface)
      */
     else if(!strcmp(argv[1], "switch"))
     {
@@ -6307,8 +6399,7 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         /* free_rawfile(&xctx->raw, 1, 0); */
         draw();
       } else if(argc > 2) {
-        my_snprintf(f, S(f),"regsub {^~/} {%s} {%s/}", argv[2], home_dir);
-        tcleval(f);
+        tclvareval("cleanup_path {", argv[2], "}", NULL);
         my_strncpy(f, tclresult(), S(f));
         extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         /* free_rawfile(&xctx->raw, 0, 0); */
@@ -6370,29 +6461,29 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         del_object_table();
         Tcl_ResetResult(interp);
       }
-      else if(argc > 2 && atoi(argv[2]) == 5) {
+      else if(argc > 2 && atoi(argv[2]) == 2) {
         xctx->prep_hash_inst=0;
         hash_instances();
       }
-      else if(argc > 2 && atoi(argv[2]) == 4) {
+      else if(argc > 2 && atoi(argv[2]) == 3) {
         xctx->prep_hash_object=0;
         hash_objects();
       }
-      else if(argc > 2 && atoi(argv[2]) == 6) {
+      else if(argc > 2 && atoi(argv[2]) == 4) {
         xctx->prep_hash_wires=0;
         hash_wires();
       }
-      else if(argc > 2 && atoi(argv[2]) == 7) {
+      else if(argc > 2 && atoi(argv[2]) == 5) {
         auto_set_wire_bus(0, xctx->wires);
       }
-      else if(argc > 5 && atoi(argv[2]) == 2) {
+      else if(argc > 5 && atoi(argv[2]) == 6) {
         /* example: xschem test 2 .xctrl. LDCP_REF 8 */
         prepare_netlist_structs(0);
         hier_hilight_hash_lookup(argv[4], atoi(argv[5]), argv[3], XINSERT);
         propagate_hilights(1, 0, XINSERT_NOREPLACE);
         Tcl_ResetResult(interp);
       }
-      else if(argc > 2 && atoi(argv[2]) == 3) {
+      else if(argc > 2 && atoi(argv[2]) == 7) {
 
         char *s = "aa	bb	cc	dd\n"
                   "eee	fff	ggg	hhh";
@@ -6402,6 +6493,9 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
         dbg(0, "%s\n----\n", s);
         Tcl_SetResult(interp, t, TCL_VOLATILE);
         my_free(_ALLOC_ID_, &t);
+      }
+      else if(argc > 2 && atoi(argv[2]) == 8) {
+        dbg(0, "sizeof(xctx)=%d\n", sizeof(Xschem_ctx));
       }
     }
 
@@ -6496,12 +6590,14 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
       if(argc>3) {
         int i;
         char *s = NULL;
+        char *res = NULL;
         if(!strcmp(argv[2], "-1")) i = -1;
         else if((i = get_instance(argv[2])) < 0 ) {
           Tcl_SetResult(interp, "xschem translate: instance not found", TCL_STATIC);
           return TCL_ERROR;
         }
-        my_strdup2(_ALLOC_ID_, &s, translate(i, argv[3]));
+        my_strdup2(_ALLOC_ID_, &s, translate(i, argv[3], &res));
+        my_free(_ALLOC_ID_, &res);
         Tcl_ResetResult(interp);
         Tcl_SetResult(interp, s, TCL_VOLATILE);
         my_free(_ALLOC_ID_, &s);
@@ -6518,15 +6614,20 @@ int xschem(ClientData clientdata, Tcl_Interp *interp, int argc, const char * arg
     {
       char *s = NULL;
       int eat_escapes = 0;
+      char *res = NULL;
       if(!xctx) {Tcl_SetResult(interp, not_avail, TCL_STATIC); return TCL_ERROR;}
       if(argc > 3) eat_escapes = atoi(argv[3]);
-      if(argc > 6) my_strdup2(_ALLOC_ID_, &s, translate3(argv[2], eat_escapes, argv[4], argv[5], argv[6], NULL));
-      else if(argc > 5) my_strdup2(_ALLOC_ID_, &s, translate3(argv[2], eat_escapes, argv[4], argv[5], NULL, NULL));
-      else if(argc > 4) my_strdup2(_ALLOC_ID_, &s, translate3(argv[2], eat_escapes, argv[4], NULL, NULL, NULL));
+      if(argc > 6) 
+        my_strdup2(_ALLOC_ID_, &s, translate3(argv[2], eat_escapes, argv[4], argv[5], argv[6], NULL, &res));
+      else if(argc > 5)
+        my_strdup2(_ALLOC_ID_, &s, translate3(argv[2], eat_escapes, argv[4], argv[5], NULL, NULL, &res));
+      else if(argc > 4)
+        my_strdup2(_ALLOC_ID_, &s, translate3(argv[2], eat_escapes, argv[4], NULL, NULL, NULL, &res));
       else {
         Tcl_SetResult(interp, "xschem translate3: missing arguments", TCL_STATIC);
         return TCL_ERROR;
       }
+      if(res) my_free(_ALLOC_ID_, &res);
       Tcl_ResetResult(interp);
       Tcl_SetResult(interp, s, TCL_VOLATILE);
       my_free(_ALLOC_ID_, &s);

@@ -92,12 +92,26 @@
 ###########################################################################
 #### SET CUSTOM COLORS FOR XSCHEM LIBRARIES MATCHING CERTAIN PATTERNS
 ###########################################################################
-#### each line contains a dircolor(pattern) followed by a color
-#### color can be an ordinary name (grey, brown, blue) or a hex code {#77aaff}
+#### each line contains a "dircolor(pattern)" followed by a color
+#### or a "dircolor(pattern)" followed by a two element list like "{#aa0000 green}"
+#### where the first element is the foreground color and the second one is the background color
+#### color/background can be an ordinary name (grey, brown, blue) or a hex code {#77aaff}
 #### hex code must be enclosed in braces
 #### these are the defaults:
-# set dircolor(/share/xschem/) red
-# set dircolor(/share/doc/xschem/) {#338844}
+# set dircolor(/devices$) {#007700}
+# set dircolor(/logic$) {#770000}
+# set dircolor(/examples$) {#770000}
+# set dircolor(/generators$) {#770000}
+# set dircolor(/ngspice$) {#770000}
+# set dircolor(/rom8k$) {#770000}
+# set dircolor(/analyses$) {#770000}
+# set dircolor(/xschem_simulator$) {#770000}
+# set dircolor(/ngspice_verilog_cosim$) {#770000}
+# set dircolor(/inst_sch_select$) {#770000}
+# set dircolor(/xTAG$) {#770000}
+# set dircolor(/pcb$) {#770000}
+# set dircolor(/library_LCC_stefan$) {#770000}
+# set dircolor(/binto7seg$) {#770000}
 
 ###########################################################################
 #### WINDOW TO OPEN ON STARTUP: XSCHEM_START_WINDOW
@@ -303,6 +317,11 @@
 #### This can be normally done by dragging with the Control key pressed.
 #### Enabling this option swaps the two drag modes.
 # set enable_stretch 0
+
+#### inst_texts_in_area_select: if set to 1 include instance texts in bounding box
+#### to enclose when doing area selects
+#### Default: not enabled(0)
+# set inst_texts_in_area_select 1
 
 #### enable drawing crosshairs at mouse coordinates. Default: disabled (0)
 # set draw_crosshair 1
@@ -536,6 +555,17 @@
 # set xschem_listen_port 2021
 
 ###########################################################################
+#### EXECUTE SCRIPTS WITH 'tcleval(...)' or '@tcleval(...)'
+###########################################################################
+#### possible values: 
+####   yes: allow scripts.
+####   no:  do not allow scripts, always return empty result.
+####   ask: (default) ask to the user if GUI is present. If no GUI is present 
+####        then allow scripts.
+#### Default: ask
+# set xschem_execute_scripts yes
+
+###########################################################################
 #### BESPICE WAVE SOCKET CONNECTION
 ###########################################################################
 #### set bespice wave listening port; default: not enabled
@@ -633,6 +663,14 @@
 # set open_in_new_window 1
 
 ###########################################################################
+#### CLOSE CONTEXT MENU
+###########################################################################
+#### If enabled the context menu will be closed when moving the mouse outside 
+#### of the context menu window. Otherwise a click in the drawing area is needed.
+#### default: enabled (1) 
+# set close_ctxmenu_on_leave 0
+
+###########################################################################
 #### ALTERNATE LOAD FILE BROWSER
 ###########################################################################
 #### uses a new file browser widget. Default: not enabled (0)
@@ -669,6 +707,14 @@
 #### to prevent "graph event stealing to schematic"
 #### Default: 0 (not set)
 # set graph_use_ctrl_key 1
+
+###########################################################################
+#### REQUIRE GRAPH TO BE SELECTED TO OPERATE ON IT.
+###########################################################################
+#### if enabled requires graph to be selected to allow panning / zooming 
+#### waveforms.
+#### Default: 0 (not set)
+# set graph_select_to_zoom 1
 
 ###########################################################################
 #### HIDE GRAPHS IF NO SPICE DATA LOADED

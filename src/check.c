@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -224,6 +224,7 @@ void trim_wires(void)
           xctx->wire[xctx->wires].prop_ptr=NULL;
           my_strdup(_ALLOC_ID_, &xctx->wire[xctx->wires].prop_ptr, xctx->wire[j].prop_ptr);
           xctx->wire[xctx->wires].bus = xctx->wire[j].bus;
+          xctx->wire[xctx->wires].flags = xctx->wire[j].flags;
           xctx->wire[xctx->wires].node=NULL;
 
           my_strdup(_ALLOC_ID_, &xctx->wire[xctx->wires].node, xctx->wire[j].node);

@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -264,7 +264,7 @@ void my_strndup(int id, char **dest, const char *src, size_t n) /* empty source 
  if(src!=NULL && src[0]!='\0')
  {
   /* 20180924 replace strndup() */
-  char *p = memchr(src, '\0', n);
+  const char *p = memchr(src, '\0', n);
   if(p) n = p - src;
   *dest = my_malloc(id, n+1);
   if(*dest) {
@@ -1542,6 +1542,7 @@ int drc_check(int i)
   char *check_result = NULL;
   int start = 0;
   int end = xctx->instances;
+  char *res1 = NULL;
 
   if(!tcleval("info procs fet_drc")[0]) {
     return ret;
@@ -1554,7 +1555,8 @@ int drc_check(int i)
     my_strdup(_ALLOC_ID_, &drc, get_tok_value(xctx->sym[xctx->inst[j].ptr].prop_ptr, "drc", 2));
     if(drc) {
       my_strdup(_ALLOC_ID_, &res, translate3(drc, 1,
-                xctx->inst[j].prop_ptr, xctx->sym[xctx->inst[j].ptr].templ, NULL, NULL));
+                xctx->inst[j].prop_ptr, xctx->sym[xctx->inst[j].ptr].templ, NULL, NULL, &res1));
+      my_free(_ALLOC_ID_, &res1);
       dbg(1, "drc_check(): res = |%s|, drc=|%s|\n", res, drc);
       if(res) {
         const char *result;
@@ -1599,6 +1601,7 @@ static int update_symbol(const char *result, int x, int selected_inst)
   int *ii = &xctx->edit_sym_i; /* static var */
   int *netl_com = &xctx->netlist_commands; /* static var */
   int modified = 0;
+  char *res = NULL;
 
   dbg(1, "update_symbol(): entering, selected_inst = %d\n", selected_inst);
   *ii = selected_inst;
@@ -1644,7 +1647,8 @@ static int update_symbol(const char *result, int x, int selected_inst)
     /* 20171220 calculate bbox before changes to correctly redraw areas */
     /* must be recalculated as cairo text extents vary with zoom factor. */
     symbol_bbox(*ii, &xctx->inst[*ii].x1, &xctx->inst[*ii].y1, &xctx->inst[*ii].x2, &xctx->inst[*ii].y2);
-    my_strdup2(_ALLOC_ID_, &old_translated_sym, translate(*ii, xctx->inst[*ii].name));
+    my_strdup2(_ALLOC_ID_, &old_translated_sym, translate(*ii, xctx->inst[*ii].name, &res));
+    my_free(_ALLOC_ID_, &res);
     /* update property string from tcl dialog */
     if(!no_change_props)
     {
@@ -1677,7 +1681,8 @@ static int update_symbol(const char *result, int x, int selected_inst)
      * to use for inst name (from symbol template) */
     prefix = 0;
     sym_number = -1;
-    my_strdup2(_ALLOC_ID_, &translated_sym, translate(*ii, symbol));
+    my_strdup2(_ALLOC_ID_, &translated_sym, translate(*ii, symbol, &res));
+    my_free(_ALLOC_ID_, &res);
     dbg(1, "update_symbol: %s -- %s\n", translated_sym, old_translated_sym);
     if(changed_symbol ||
         ( !strcmp(symbol, xctx->inst[*ii].name) &&  strcmp(translated_sym, old_translated_sym) ) ) {

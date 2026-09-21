@@ -913,6 +913,12 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    <li><kbd>       get_sch_from_sym inst [symbol]</kbd></li><pre>
    get schematic associated with instance 'inst'
    if inst==-1 and a 'symbol' name is given get sch associated with symbol </pre>
+   <li><kbd>       get_sym_name inst [ndir] [ext] [abs_path]</kbd></li><pre>
+       get symbol referenced by instance `inst`, either by the instance `schematic` attribute
+       or by looking in instance symbol reference (xctx-&gt;inst[i].name)
+       ndir: specify how many directory components return in the result
+       ext: append extension if not zero
+       abs_path: get full path as found in library search paths </pre>
    <li><kbd>       get_sym_type symname</kbd></li><pre>
    get "type" value from global attributes of symbol,
    looking frst in loaded symbols, then looking in symbol file
@@ -939,6 +945,8 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    Do a simple hashing of string 'str' </pre>
    <li><kbd>       help</kbd></li><pre>
   Print command help </pre>
+   <li><kbd>       hier_attr</kbd></li><pre>
+   Debug command </pre>
    <li><kbd>       hier_psprint [file]</kbd></li><pre>
    Hierarchical postscript / pdf print
    if 'file' is not given show a fileselector dialog box </pre>
@@ -1055,7 +1063,7 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    0: eat non escaped quotes (")
    1: return unescaped quotes as part of the token value if they are present
    2: eat backslashes </pre>
-   <li><kbd>       load [-nosymbols|-gui|-noundoreset|-nofullzoom|-keep_symbols] f</kbd></li><pre>
+   <li><kbd>       load [-nosymbols|-gui|-noundoreset|-nofullzoom|-nodraw|-keep_symbols] f</kbd></li><pre>
    Load a new file 'f'.
    '-gui': ask to save modified file or warn if opening an already
        open file or opening a new(not existing) file.
@@ -1464,12 +1472,14 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
       1 : select matching instances
      -1 : unselect matching instances
    'tok' set as:
+       &lt;attr&gt; : will search for 'val' in instance attribute 'attr'
        propstring : will search for 'val' in the entire
        *instance* attribute string.
+       txt_ptr : this is used to search only the txt_ptr string of text pbjects
        cell::propstring : will search for 'val' in the entire
        *symbol* attribute string.
        cell::name : will search for 'val' in the symbol name
-       cell::&lt;attr&gt; will search for 'val' in symbol attribute 'attr'
+       cell::&lt;attr&gt; : will search for 'val' in symbol attribute 'attr'
          example: xschem search regex 0 cell::template GAIN=100
     if 'no_match_case' is specified do not consider case sensitivity in search
     if 'nodraw' is specified do not draw search result</pre>
@@ -1493,11 +1503,15 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    <li><kbd>       select_inside x1 y1 x2 y2 [sel]</kbd></li><pre>
    Select all objects inside the indicated area
    if [sel] is set to '0' do an unselect operation </pre>
+   <li><kbd>       selected_rect</kbd></li><pre>
+  Return list of {color index} of selected rects </pre>
    <li><kbd>       selected_set [what]</kbd></li><pre>
    Return a list of selected instance names
    If what is not given or set to 'inst' return list of selected instance names
    If what set to 'rect' return list of selected rectangles with their coordinates
    If what set to 'text' return list of selected texts with their coordinates </pre>
+   <li><kbd>       selected_text</kbd></li><pre>
+  Return list of selected texts </pre>
    <li><kbd>       selected_wire</kbd></li><pre>
   Return list of selected nets </pre>
    <li><kbd>       send_to_viewer</kbd></li><pre>
@@ -1625,10 +1639,10 @@ C {verilog_timescale.sym} 1050 -100 0 0 {name=s1 timestep="1ns" precision="1ns" 
    <li><kbd>       switch [window_path |schematic_name]</kbd></li><pre>
    Switch context to indicated window path or schematic name
    returns 0 if switch was successfull or 1 in case of errors
-   if "previous" given as window path switch to previously active tab
-   (only for tabbed interface)
    (no tabs/windows present or no matching win_path / schematic name
-   found).</pre>
+   found).
+   if "previous" given as window path switch to previously active tab
+   (only for tabbed interface)</pre>
    <li><kbd>       symbols [n | 'derived_symbols']</kbd></li><pre>
    if 'n' given list symbol with name or number 'n', else list all
    if 'derived_symbols' is given list also symbols derived from base symbol

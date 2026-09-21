@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@ static int waves_selected(int event, KeySym key, int state, int button)
   int rstate; /* state without ShiftMask */
   int i, check;
   int graph_use_ctrl_key = tclgetboolvar("graph_use_ctrl_key");
+  int graph_select_to_zoom = tclgetboolvar("graph_select_to_zoom");
   int is_inside = 0, skip = 0;
   static unsigned int excl = STARTZOOM | STARTRECT | STARTLINE | STARTWIRE |
                              STARTPAN | STARTSELECT | STARTMOVE | STARTCOPY;
@@ -41,9 +42,11 @@ static int waves_selected(int event, KeySym key, int state, int button)
   rstate &= ~ShiftMask; /* don't use ShiftMask, identifying characters is sufficient */
   if(xctx->ui_state & excl) skip = 1;
   /* else if(event != -3 && sch_waves_loaded() < 0 ) skip = 1; */
+
   /* allow to work on graphs even if ctrl released while in GRAPHPAN mode
    * This is useful on touchpads with TappingDragLock enabled */
-  else if(graph_use_ctrl_key && !(state & ControlMask) && !(xctx->ui_state & GRAPHPAN)) skip = 1;
+  else if(!graph_select_to_zoom && graph_use_ctrl_key &&
+          !(state & ControlMask) && !(xctx->ui_state & GRAPHPAN)) skip = 1;
   else if(SET_MODMASK) skip = 1;
   else if(event == MotionNotify && (state & Button2Mask)) skip = 1;
   else if(event == MotionNotify && (state & Button1Mask) && (state & ShiftMask)) skip = 1;
@@ -53,15 +56,16 @@ static int waves_selected(int event, KeySym key, int state, int button)
   /* else if(event == KeyPress && (state & ShiftMask)) skip = 1; */
   else if(!skip) for(i=0; i< xctx->rects[GRIDLAYER]; ++i) {
     double lmargin;
+    int sel;
     xRect *r;
     r = &xctx->rect[GRIDLAYER][i];
+    if(!(r->flags & 1) ) continue;
+    sel = (r->sel == SELECTED);
     lmargin = (r->x2 - r->x1) / 20.;
     lmargin = lmargin < 3. ? 3. : lmargin;
     lmargin = lmargin > 20. ? 20. : lmargin;
-    if(!(r->flags & 1) ) continue;
-    if( !graph_use_ctrl_key && !(state & ControlMask) &&
+    if( !sel &&
        !strboolcmp(get_tok_value(xctx->rect[GRIDLAYER][i].prop_ptr, "lock", 0), "true")) continue;
-
     check =
       (xctx->ui_state & GRAPHPAN) ||
       ((event == ButtonPress || event == ButtonRelease) && button == Button3 &&
@@ -80,7 +84,7 @@ static int waves_selected(int event, KeySym key, int state, int button)
          )
       );
 
-    if(check) {
+    if(check && (sel || !graph_select_to_zoom)) {
        is_inside = 1;
        if(! (xctx->ui_state & GRAPHPAN) ) {
          xctx->graph_master = i;
@@ -421,8 +425,8 @@ void backannotate_at_cursor_b_pos(xRect *r, Graph_ctx *gr)
 static int waves_callback(int event, int mx, int my, KeySym key, int button, int aux, int state)
 {
   Graph_ctx *gr;
-  int rstate; /* reduced state wit ShiftMask bit filtered out */
   int graph_use_ctrl_key = tclgetboolvar("graph_use_ctrl_key");
+  int graph_select_to_zoom = tclgetboolvar("graph_select_to_zoom");
   int i, dataset = 0;
   int need_fullredraw = 0, need_all_redraw = 0, need_redraw = 0, need_redraw_master = 0;
   double xx1 = 0.0, xx2 = 0.0, yy1, yy2;
@@ -431,12 +435,10 @@ static int waves_callback(int event, int mx, int my, KeySym key, int button, int
   int save_mouse_at_end = 0, clear_graphpan_at_end = 0;
   int track_dset = -2; /* used to find dataset of closest wave to mouse if 't' is pressed */
   xRect *r = NULL;
-  int access_cond = !graph_use_ctrl_key || (state & ControlMask);
+  int access_cond = graph_select_to_zoom || (!graph_use_ctrl_key || (state & ControlMask));
 
   dbg(1, "uistate=%d, graph_flags=%d\n", xctx->ui_state, xctx->graph_flags);
   /* if(event != -3 && !xctx->raw) return 0; */
-  rstate = state; /* rstate does not have ShiftMask bit, so easier to test for KeyPress events */
-  rstate &= ~ShiftMask; /* don't use ShiftMask, identifying characters is sufficient */
   #if HAS_CAIRO==1
   cairo_save(xctx->cairo_ctx);
   cairo_save(xctx->cairo_save_ctx);
@@ -1952,7 +1954,7 @@ static int edit_rect_point(int state)
    rect_c = xctx->sel_array[0].col;
   /* rectangle point: Check is user is clicking a control point of a rectangle */
   if(rect_n >= 0) {
-    double ds = xctx->cadhalfdotsize * 2 * xctx->zoom;
+    double ds = xctx->cadhalfdotsize * 4 * xctx->zoom * tk_scaling;
     xRect *p = &xctx->rect[rect_c][rect_n];
 
     xctx->need_reb_sel_arr=1;
@@ -2190,12 +2192,12 @@ static void context_menu_action(double mx, double my)
 /* Mouse wheel events */
 static int handle_mouse_wheel(int event, int mx, int my, KeySym key, int button, int aux, int state)
 {
-   int graph_use_ctrl_key = tclgetboolvar("graph_use_ctrl_key");
    if(button==Button5 && state == 0 ) {
     if(waves_selected(event, key, state, button)) {
       waves_callback(event, mx, my, key, button, aux, state);
       return 1;
     }
+     /* zoom out */
      view_unzoom(CADZOOMSTEP);
      return 0;
    }
@@ -2204,38 +2206,42 @@ static int handle_mouse_wheel(int event, int mx, int my, KeySym key, int button,
       waves_callback(event, mx, my, key, button, aux, state);
       return 1;
     }
+     /* zoom in */
      view_zoom(CADZOOMSTEP);
      return 0;
    }
-   if(!graph_use_ctrl_key) {
-     if(button==Button4 && (state & ShiftMask) && !(state & Button2Mask)) {
-      if(waves_selected(event, key, state, button)) {
-        waves_callback(event, mx, my, key, button, aux, state);
-        return 1;
-      }
-      xctx->xorigin+=-CADMOVESTEP*xctx->zoom/2.;
-      draw();
-      redraw_w_a_l_r_p_z_rubbers(1);
-     }
-     else if(button==Button5 && (state & ShiftMask) && !(state & Button2Mask)) {
-      if(waves_selected(event, key, state, button)) {
-        waves_callback(event, mx, my, key, button, aux, state);
-        return 1;
-      }
-      xctx->xorigin-=-CADMOVESTEP*xctx->zoom/2.;
-      draw();
-      redraw_w_a_l_r_p_z_rubbers(1);
-     }
-     else if(button==Button4 && (state & ControlMask) && !(state & Button2Mask)) {
-      xctx->yorigin+=-CADMOVESTEP*xctx->zoom/2.;
-      draw();
-      redraw_w_a_l_r_p_z_rubbers(1);
-     }
-     else if(button==Button5 && (state & ControlMask) && !(state & Button2Mask)) {
-      xctx->yorigin-=-CADMOVESTEP*xctx->zoom/2.;
-      draw();
-      redraw_w_a_l_r_p_z_rubbers(1);
-     }
+   if(button==Button4 && (state & ShiftMask) && !(state & Button2Mask)) {
+    if(waves_selected(event, key, state, button)) {
+      waves_callback(event, mx, my, key, button, aux, state);
+      return 1;
+    }
+    /* pan to the right; move schematic to left */
+    xctx->xorigin+=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_z_rubbers(1);
+   }
+   else if(button==Button5 && (state & ShiftMask) && !(state & Button2Mask)) {
+    if(waves_selected(event, key, state, button)) {
+      waves_callback(event, mx, my, key, button, aux, state);
+      return 1;
+    }
+
+    /* pan to the left; move schematic to right */
+    xctx->xorigin-=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_z_rubbers(1);
+   }
+   else if(button==Button4 && (state & ControlMask) && !(state & Button2Mask)) {
+    /* pan down; move schematic up */
+    xctx->yorigin+=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_z_rubbers(1);
+   }
+   else if(button==Button5 && (state & ControlMask) && !(state & Button2Mask)) {
+    /* pan up; move schematic down */
+    xctx->yorigin-=-CADMOVESTEP*xctx->zoom/2.;
+    draw();
+    redraw_w_a_l_r_p_z_rubbers(1);
    }
    return 0;
 }
@@ -2349,6 +2355,18 @@ static void handle_enter_notify(int draw_xhair, int crosshair_size)
 {
     struct stat buf;
     dbg(2, "callback(): Enter event, ui_state=%d\n", xctx->ui_state);
+    
+    /* Issue a warning if underlying file has been touched */
+    dbg(1, "handle_enter_notify(): warn_disk_file_modified=%d\n", xctx->warn_disk_file_modified);
+    if(xctx->warn_disk_file_modified == 1 && !stat(xctx->sch[xctx->currsch], &buf)) {
+      if(xctx->time_last_modify!= -1  && xctx->time_last_modify != buf.st_mtime) {
+        tclvareval("alert_ \"Schematic file: ", xctx->sch[xctx->currsch],
+            "\nHas been changed since opening.\" {}", NULL);
+        xctx->warn_disk_file_modified = 0;
+      }
+      dbg(1, "handle_enter_notify(): %ld - %ld\n", xctx->time_last_modify, buf.st_mtime);
+    }
+
     xctx->mouse_inside = 1;
     if(draw_xhair) {
       if(crosshair_size == 0) {
@@ -4126,7 +4144,8 @@ static void handle_button_press(int event, int state, int rstate, KeySym key, in
 
    state &= ~(Button1Mask | Button2Mask | Button3Mask | Button4Mask | Button5Mask ); /* ignore ButtonStates */
    if(!tabbed_interface && strcmp(win_path, xctx->current_win_path)) return;
-   dbg(1, "callback(): ButtonPress  ui_state=%d state=%d\n",xctx->ui_state,state);
+   dbg(1, "callback(): ButtonPress  ui_state=%d state=%d semaphore=%d\n",xctx->ui_state,state, xctx->semaphore);
+   dbg(1, "callback(): win_path=%s\n", win_path);
    if(waves_selected(event, key, state, button)) {
      waves_callback(event, mx, my, key, button, aux, state);
      return;
@@ -4196,6 +4215,11 @@ static void handle_button_press(int event, int state, int rstate, KeySym key, in
 
    /* button1 click to select another instance while edit prop dialog open */
    else if(button==Button1 && xctx->semaphore >= 2) {
+     if(xctx->semaphore >= 3) { /* record clicked point coordinates when ctxmenu is shown */
+       xctx->mx_save = mx; xctx->my_save = my;
+       xctx->mx_double_save=xctx->mousex;
+       xctx->my_double_save=xctx->mousey;
+     }
      if(tcleval("winfo exists .dialog.f2.txt")[0] == '1') { /* proc enter_text */
        tcleval(".dialog.buttons.ok invoke");
        return;
@@ -4644,6 +4668,7 @@ static int handle_window_switching(int event, int tabbed_interface, const char *
           event, xctx->ui_state, win_path);
       /* This will switch context only when copying stuff across windows
        * this is the window *receiving* copied objects */
+      tcleval("destroy .ctxmenu");
       if( event == EnterNotify && !stat(sel_file, &buf) && (xctx->ui_state & STARTCOPY)) {
         dbg(1, "callback(): switching window context for copy : %s --> %s, semaphore=%d\n",
                 xctx->current_win_path, win_path, xctx->semaphore);
@@ -4699,6 +4724,11 @@ int callback(const char *win_path, int event, int mx, int my, KeySym key, int bu
                          (persistent_command && (xctx->last_command & STARTWIRE));
   struct stat buf;
 
+
+  if(xctx->semaphore >= 3) {
+    dbg(1, "reentrant callback() call disabled, semaphore = %d\n", xctx->semaphore);
+    return 0;
+  }
   /* this fix uses an alternative method for getting mouse coordinates on KeyPress/KeyRelease
    * events. Some remote connection softwares do not generate the correct coordinates
    * on such events */
@@ -4737,7 +4767,7 @@ int callback(const char *win_path, int event, int mx, int my, KeySym key, int bu
 
 
   /* file exists and modification time on disk has changed since file loaded ... */
-  if(!xctx->modified && !stat( xctx->sch[xctx->currsch], &buf) && xctx->time_last_modify &&
+  if(!xctx->modified && !stat( xctx->sch[xctx->currsch], &buf) && xctx->time_last_modify != -1  &&
      xctx->time_last_modify != buf.st_mtime) {
      set_modify(1);
   }
@@ -4801,6 +4831,10 @@ int callback(const char *win_path, int event, int mx, int my, KeySym key, int bu
      break;
 
    case MotionNotify:
+     if(xctx->semaphore >= 2 && !redraw_only) {
+       xctx->semaphore--;
+       return 0;
+     }
      handle_motion_notify(event, key, state, rstate, button, mx, my,
                           aux, draw_xhair, enable_stretch, tabbed_interface, win_path,
                           snap_cursor, wire_draw_active);

@@ -3,7 +3,7 @@ v {xschem version=3.4.8RC file_version=1.3
 * This file is part of XSCHEM,
 * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
 * simulation.
-* Copyright (C) 1998-2024 Stefan Frederik Schippers
+* Copyright (C) 1998-2026 Stefan Frederik Schippers
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -31,5 +31,4 @@ C {opin.sym} 200 -530 0 0 {name=p20 lab=OUT}
 C {noconn.sym} 200 -530 0 0 {name=l1}
 C {noconn.sym} 120 -550 0 1 {name=l2}
 C {noconn.sym} 120 -500 0 1 {name=l3}
-C {architecture.sym} 280 -620 0 0 {code=ARCHITECTURE 
-"Use global schematic properties for code"}
+C {architecture.sym} 310 -620 0 0 {name=a1 code=ARCHITECTURE}

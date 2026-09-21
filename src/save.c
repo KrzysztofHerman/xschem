@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -714,7 +714,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type, int no_warning
       /* array of number of points of datasets (they are of varialbe length) */
       n = sscanf(line, "No. of Data Rows : %d", &npoints);
       if(n < 1) {
-        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        dbg(0, "read_dataset(): WARNING (No. of Data Rows): malformed raw file, aborting, line:\n%s\n", line);
         extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         /* free_rawfile(rawptr, 0, 0); */
         exit_status = 0;
@@ -747,7 +747,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type, int no_warning
       }
 
       if(n < 1) {
-        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        dbg(0, "read_dataset(): WARNING (No. Variables): malformed raw file, aborting, line:\n%s\n", line);
         extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         /* free_rawfile(rawptr, 0, 0); */
         exit_status = 0;
@@ -761,7 +761,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type, int no_warning
     else if(!done_points && !strncmp(line, "No. Points:", 11)) {
       n = sscanf(line, "No. Points: %d", &npoints);
       if(n < 1) {
-        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        dbg(0, "read_dataset(): WARNING (No. Points): malformed raw file, aborting, line:\n%s\n", line);
         extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         /* free_rawfile(rawptr, 0, 0); */
         exit_status = 0;
@@ -784,7 +784,7 @@ static int read_dataset(FILE *fd, Raw **rawptr, const char *type, int no_warning
       my_realloc(_ALLOC_ID_, &varname, strlen(line) + 1) ;
       n = sscanf(line, "%*[\t]%d%*[\t]%[^\t]", &i, varname); /* read index and name of saved waveform */
       if(n < 2) {
-        dbg(0, "read_dataset(): WAARNING: malformed raw file, aborting\n");
+        dbg(0, "read_dataset(): WARNING (Variables): malformed raw file, aborting, line:\n%s\n", line);
         extra_rawfile(3, NULL, NULL, -1.0, -1.0);
         /* free_rawfile(rawptr, 0, 0); */
         exit_status = 0;
@@ -2324,6 +2324,10 @@ double get_raw_value(int dataset, int idx, int point)
 {
   int i, ofs;
   ofs = 0;
+  if(xctx->raw == NULL) {
+    dbg(0, "get_raw_value(): no spice raw file loaded\n");
+    return 0.0;
+  }
   if(dataset >= xctx->raw->datasets) {
     dbg(0, "get_raw_value(): dataset(%d) >= datasets(%d)\n", dataset,  xctx->raw->datasets);
   }
@@ -3465,8 +3469,8 @@ int save_schematic(const char *schname, int fast) /* 20171020 added return value
   }
   else { /* user asks to save to same filename */
     if(!stat(xctx->sch[xctx->currsch], &buf)) {
-      if(xctx->time_last_modify && xctx->time_last_modify != buf.st_mtime) {
-        tclvareval("ask_save_optional \"Schematic file: ", xctx->sch[xctx->currsch],
+      if(xctx->time_last_modify != -1 && xctx->time_last_modify != buf.st_mtime) {
+        tclvareval("ask_save \"Schematic file: ", xctx->sch[xctx->currsch],
             "\nHas been changed since opening.\nSave anyway?\" 0", NULL);
         if(strcmp(tclresult(), "yes") ) return 0;
       }
@@ -3487,6 +3491,7 @@ int save_schematic(const char *schname, int fast) /* 20171020 added return value
   /* update time stamp */
   if(!stat(schname, &buf)) {
     xctx->time_last_modify =  buf.st_mtime;
+    xctx->warn_disk_file_modified = 1; /* re-enable warning if underlying file changed */
   }
   my_strncpy(xctx->current_name, rel_sym_path(schname), S(xctx->current_name));
   my_snprintf(msg, S(msg), "get_directory {%s}", schname);
@@ -3517,6 +3522,7 @@ void link_symbols_to_instances(int from)
   int cond, i, merge = 1;
   char *type=NULL;
   char *name = NULL;
+  char *res = NULL;
 
   if(from < 0 ) {
     from = 0;
@@ -3526,7 +3532,8 @@ void link_symbols_to_instances(int from)
     dbg(2, "link_symbols_to_instances(): inst=%d\n", i);
     dbg(2, "link_symbols_to_instances(): matching inst %d name=%s \n",i, xctx->inst[i].name);
     dbg(2, "link_symbols_to_instances(): -------\n");
-    my_strdup2(_ALLOC_ID_, &name, tcl_hook2(translate(i, xctx->inst[i].name)));
+    my_strdup2(_ALLOC_ID_, &name, tcl_hook2(translate(i, xctx->inst[i].name, &res)));
+    my_free(_ALLOC_ID_, &res);
     xctx->inst[i].ptr = match_symbol(name);
     my_free(_ALLOC_ID_, &name);
   }
@@ -3628,9 +3635,9 @@ int load_schematic(int load_symbols, const char *fname, int reset_undo, int aler
         xctx->time_last_modify =  buf.st_mtime;
       } else {
         /* xctx->time_last_modify = time(NULL); */ /* file does not exist, set mtime to current time */
-        xctx->time_last_modify = 0; /* file does not exist, set mtime to 0 (undefined)*/
+        xctx->time_last_modify = -1; /* file does not exist, set mtime to -1 (undefined)*/
       }
-    } else {xctx->time_last_modify = 0;} /* undefined */
+    } else {xctx->time_last_modify = -1;} /* undefined */
     if(generator) {
       char *cmd;
       cmd = get_generator_command(ffname);
@@ -3687,7 +3694,7 @@ int load_schematic(int load_symbols, const char *fname, int reset_undo, int aler
     dbg(1, "load_schematic(): %s, returning\n", xctx->sch[xctx->currsch]);
   } else { /* ffname == NULL or empty */
     /* if(reset_undo) xctx->time_last_modify = time(NULL); */ /* no file given, set mtime to current time */
-    if(reset_undo) xctx->time_last_modify = 0; /* no file given, set mtime to 0 (undefined) */
+    if(reset_undo) xctx->time_last_modify = -1; /* no file given, set mtime to -1 (undefined) */
     clear_drawing();
     for(i=0;; ++i) {
       if(xctx->netlist_type == CAD_SYMBOL_ATTRS) {
@@ -4057,7 +4064,7 @@ void get_sym_type(const char *symname, char **type,
  * as in corresponding .sym file if it exists */
 static void align_sch_pins_with_sym(const char *name, int pos)
 {
-  char *ptr;
+  const char *ptr;
   char symname[PATH_MAX];
   char *symtype = NULL;
   const char *pinname;
@@ -4119,7 +4126,7 @@ static void add_pinlayer_boxes(int *lastr, xRect **bb,
   bb[PINLAYER][i].y1 = i_y0 - 2.5; bb[PINLAYER][i].y2 = i_y0 + 2.5;
   RECTORDER(bb[PINLAYER][i].x1, bb[PINLAYER][i].y1, bb[PINLAYER][i].x2, bb[PINLAYER][i].y2);
   bb[PINLAYER][i].prop_ptr = NULL;
-  label = get_tok_value(prop_ptr, "lab", 0);
+  label = get_tok_value(prop_ptr, "lab", 1);
   save = strlen(label)+30;
   pin_label = my_malloc(_ALLOC_ID_, save);
   pin_label[0] = '\0';
@@ -4132,11 +4139,12 @@ static void add_pinlayer_boxes(int *lastr, xRect **bb,
   }
   my_strdup(_ALLOC_ID_, &bb[PINLAYER][i].prop_ptr, pin_label);
   bb[PINLAYER][i].flags = 0;
-  bb[PINLAYER][i].extraptr = 0;
+  bb[PINLAYER][i].extraptr = NULL;
   bb[PINLAYER][i].dash = 0;
   bb[PINLAYER][i].ellipse_a =  bb[PINLAYER][i].ellipse_b = -1;
   bb[PINLAYER][i].sel = 0;
   bb[PINLAYER][i].fill = 1;
+  bb[PINLAYER][i].bus = 0.0;
   /* add to symbol pins remaining attributes from schematic pins, except name= and lab= */
   my_strdup(_ALLOC_ID_, &pin_label, get_sym_template(prop_ptr, "lab"));   /* remove name=...  and lab=... */
   my_strcat(_ALLOC_ID_, &bb[PINLAYER][i].prop_ptr, pin_label);
@@ -4746,10 +4754,12 @@ int load_sym_def(const char *name, FILE *embed_fd)
         tt[i].floater_instname = tmptext.floater_instname;
         dbg(1, "l_s_d(): txt1: level=%d tt[i].txt_ptr=%s, i=%d\n", level, tt[i].txt_ptr, i);
         if (level>0) {
-          const char* tmp = translate2(lcc, level, tt[i].txt_ptr);
+          char *res = NULL;
+          const char* tmp = translate2(lcc, level, tt[i].txt_ptr, &res);
           dbg(1, "l_s_d(): txt2: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
           rot = lcc[level].rot; flip = lcc[level].flip;
           my_strdup2(_ALLOC_ID_, &tt[i].txt_ptr, tmp);
+          my_free(_ALLOC_ID_, &res);
           dbg(1, "l_s_d(): txt3: tt[i].txt_ptr=%s, i=%d\n",  tt[i].txt_ptr, i);
           /* allow annotation inside LCC instances. */
           if(!strcmp(tt[i].txt_ptr, "@spice_get_voltage")) {
@@ -5213,6 +5223,8 @@ int descend_symbol(void)
   int n = 0;
   struct stat buf;
   int save_netlist_type = xctx->netlist_type;
+  char *res = NULL;
+
   if(xctx->currsch + 1 >= CADMAXHIER) {
     dbg(0, "descend_symbol(): max hierarchy depth reached: %d", CADMAXHIER);
     return 0;
@@ -5236,7 +5248,8 @@ int descend_symbol(void)
       if(ret == 0) clear_all_hilights();
       if(ret == -1) return 0; /* user cancel */
     }
-    my_snprintf(name, S(name), "%s", translate(n, xctx->inst[n].name));
+    my_snprintf(name, S(name), "%s", translate(n, xctx->inst[n].name, &res));
+    my_free(_ALLOC_ID_, &res);
     /* dont allow descend in the default missing symbol */
     if((xctx->inst[n].ptr+ xctx->sym)->type &&
        !strcmp( (xctx->inst[n].ptr+ xctx->sym)->type,"missing")) return 0;

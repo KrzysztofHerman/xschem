@@ -1,9 +1,9 @@
-v {xschem version=3.4.5 file_version=1.2
+v {xschem version=3.4.8RC file_version=1.3
 *
 * This file is part of XSCHEM,
 * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
 * simulation.
-* Copyright (C) 1998-2024 Stefan Frederik Schippers
+* Copyright (C) 1998-2026 Stefan Frederik Schippers
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ G {}
 K {}
 V {}
 S {}
+F {}
 E {}
 B 2 1030 -330 1570 -130 {flags=graph
 y1=-8.1
@@ -865,6 +866,7 @@ value=".temp 30
 ** SPICE models for active devices and put them  into the below 
 ** referenced file in netlist/simulation directory.
 ** http://bwrcs.eecs.berkeley.edu/Classes/icdesign/ee241_s00/ASSIGNMENTS/TSMC035-n96g-params.txt
+.options savecurrents
 .include \\"models_cmos_example.txt\\"
 
 .param IBIAS=1u
@@ -875,12 +877,15 @@ write test_ac.raw
 set appendwrite
 
 ac dec 10 1000 10G
+remzerovec
 write test_ac.raw
 alter IBIAS=10u
 ac dec 10 1000 10G
+remzerovec
 write test_ac.raw
 alter IBIAS=100u
 ac dec 10 1000 10G
+remzerovec
 write test_ac.raw
 
 .endc

@@ -1,9 +1,9 @@
-v {xschem version=3.4.4 file_version=1.2
+v {xschem version=3.4.8RC file_version=1.3
 *
 * This file is part of XSCHEM,
 * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
 * simulation.
-* Copyright (C) 1998-2024 Stefan Frederik Schippers
+* Copyright (C) 1998-2026 Stefan Frederik Schippers
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -93,6 +93,7 @@ assign #oe_delay DOUT = OEN ? 'bz: iidata;
 
 }
 S {}
+F {}
 E {}
 L 4 290 -560 290 -260 {}
 L 4 210 -560 210 -260 {}
@@ -180,3 +181,4 @@ C {arch_declarations.sym} 750 -630 0 0 {    constant RAM_DEPTH :integer := 2**di
     signal mem : RAMARR (0 to RAM_DEPTH-1);
     signal data : std_logic_vector(width-1 downto 0);
 }
+C {noconn.sym} 340 -220 0 0 {name=l1}

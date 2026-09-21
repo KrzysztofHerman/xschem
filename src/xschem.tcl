@@ -4,7 +4,7 @@
 #  This file is part of XSCHEM,
 #  a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
 #  simulation.
-#  Copyright (C) 1998-2024 Stefan Frederik Schippers
+#  Copyright (C) 1998-2026 Stefan Frederik Schippers
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -825,7 +825,7 @@ proc tabulate {text {sep ",\t "}} {
     set found_data 1
 
     # change separators to { }
-    regsub -all $sep $line $used_sep line
+    literal_regsub -all $sep $line $used_sep line
 
     # transform resulting line into a proper list
     set line [split $line $used_sep]
@@ -1981,9 +1981,9 @@ proc cellview_setlabels {w symbol derived_symbol} {
       $w configure -bg $symbg
     }
   }
-  puts ===============
+  # puts ===============
   if {$sym_sch ne $new_sch && $sym_spice_sym_def eq {}} {
-    puts "Changing schematic attribute in symbol"
+    puts "Changing schematic attribute in symbol $symbol"
     xschem load -keep_symbols -nodraw -noundoreset $symbol
     set oldprop [xschem get schsymbolprop]
     if { $new_sch eq $default_sch } {
@@ -2002,10 +2002,10 @@ proc cellview_setlabels {w symbol derived_symbol} {
     xschem netlist -keep_symbols -noalert;# traverse the hierarchy and retain all encountered symbols
     puts "get netlist"
   }
-  puts sym_sch=$sym_sch
-  puts default_sch=$default_sch
-  puts new_sch=$new_sch
-  puts symbol=$symbol
+  # puts sym_sch=$sym_sch
+  # puts default_sch=$default_sch
+  # puts new_sch=$new_sch
+  # puts symbol=$symbol
 }
 
 proc cellview_edit_item {symbol w} {
@@ -2052,8 +2052,41 @@ proc cellview_edit_sym {w} {
 # derived_symbols: empty or 'derived_symbols'
 # upd: never set by caller (used iinternally to update)
 proc cellview { {derived_symbols {}} {upd 0}} {
-  global nolist_libs dark_gui_colorscheme netlist_type
+  global nolist_libs dark_gui_colorscheme netlist_type cellview_geometry
 
+  if {$upd == 1} {
+    xschem reload_symbols ;# purge unused symbols
+    xschem netlist -keep_symbols -noalert;# traverse the hierarchy and retain all encountered symbols
+    set syms [join [lsort -index 1 [xschem symbols $derived_symbols]]]
+    set sf .cv.center.f.scrl
+    foreach {i symbol} $syms {
+      set base_name [xschem symbol_base_name $symbol]
+      set derived_symbol 0
+      if {$base_name ne {}} {
+        set derived_symbol 1
+      }
+      if {$derived_symbol} {
+        set abs_sym [abs_sym_path $base_name]
+      } else {
+        set abs_sym [abs_sym_path $symbol]
+      }
+      set skip 0
+      foreach j $nolist_libs {
+        if {[regexp $j $abs_sym]} {
+          set skip 1
+          break
+        }
+      }
+      if {$skip} { continue }
+
+      set type [xschem getprop symbol $symbol type]
+      if {$type eq {subcircuit}} {
+        # puts "$sf.f$i.s $symbol $derived_symbol"
+        cellview_setlabels $sf.f$i.s $symbol $derived_symbol
+      }
+    }
+  }
+  if {[winfo exists .cv]} {destroy .cv}
   set save_netlist_type [xschem get netlist_type]
 
   if {$dark_gui_colorscheme} {
@@ -2073,41 +2106,40 @@ proc cellview { {derived_symbols {}} {upd 0}} {
     set font fixed
   }
 
+  set current_win [xschem get current_win_path]
   set netlist_type $save_netlist_type
   xschem set netlist_type $netlist_type
   xschem reload_symbols ;# purge unused symbols
   xschem netlist -keep_symbols -noalert;# traverse the hierarchy and retain all encountered symbols
-  if {!$upd} {
-    catch {destroy .cv}
-    toplevel .cv
-    wm geometry .cv 800x200
-    update
-    raise .cv
-    frame .cv.top
-    label .cv.top.sym -text {   SYMBOL} -width 30 -bg grey60 -anchor w -padx 4 -font $font
-    label .cv.top.sch -text SCHEMATIC -width 45 -bg grey60 -anchor w -padx 4 -font $font
-    label .cv.top.pad -text {      } -width 4 -bg grey60 -font $font
-    pack .cv.top.sym .cv.top.sch -side left -fill x -expand 1
-    pack .cv.top.pad -side left -fill x
-    frame .cv.center
-    set sf [sframe .cv.center]
-  } else {
-    set sf .cv.center.f.scrl
-  }
+
+  toplevel .cv
+  update
+  raise .cv
+  frame .cv.top
+  label .cv.top.sym -text {   SYMBOL} -width 30 -bg grey60 -anchor w -padx 4 -font $font
+  label .cv.top.inst -text { INST} -width 8 -bg grey60 -anchor w -padx 4 -font $font
+  label .cv.top.sch -text NETLIST -width 45 -bg grey60 -anchor w -padx 4 -font $font
+  label .cv.top.pad -text {      } -width 10 -bg grey60 -font $font
+  pack .cv.top.sym .cv.top.inst .cv.top.sch -side left -fill x -expand 1
+  pack .cv.top.pad -side left -fill x
+  frame .cv.center
+  set sf [sframe .cv.center]
 
   set syms [join [lsort -index 1 [xschem symbols $derived_symbols]]]
+
   # puts "syms=$syms"
   foreach {i symbol} $syms {
-    if { [catch {set base_name [xschem symbol_base_name $symbol]}] } {
-      set base_name $symbol
-    }
-    # puts "i=$i, symbol=$symbol"
+    set base_name [xschem symbol_base_name $symbol]
+    # following 2 attributes are defined in derived symbols created by get_additional_symbols()
+    set inst_schematic [xschem getprop symbol $i inst_schematic]
+    set from_inst [xschem getprop symbol $i from_inst]
+    # puts "    i=$i, symbol=$symbol, base_name=$base_name"
     set derived_symbol 0
     if {$base_name ne {}} {
       set derived_symbol 1
     }
     if { [catch {xschem get_sch_from_sym -1 $symbol} abs_sch ]} {
-      set abs_sch [abs_sym_path [add_ext $symbol .sch]]
+      set abs_sch [abs_sym_path $symbol]
     }
     if {$derived_symbol} {
       set abs_sym [abs_sym_path $base_name]
@@ -2129,29 +2161,38 @@ proc cellview { {derived_symbols {}} {upd 0}} {
     set type [xschem getprop symbol $symbol type]
     set sym_spice_sym_def [xschem getprop symbol $symbol spice_sym_def 2]
     if {$type eq {subcircuit}} {
+      frame $sf.f$i
+      pack $sf.f$i -side top -fill x
+      label  $sf.f$i.l -text $symbol -width 30 -anchor w -padx 4 -borderwidth 1 \
+        -relief sunken -pady 1 -font $font
+      label  $sf.f$i.i -text $from_inst -width 8 -anchor w -padx 4 -borderwidth 1 \
+        -relief sunken -pady 1 -font $font
+      # puts $sf.f$i.s
+      entry $sf.f$i.s -width 45 -borderwidth 1 -relief sunken -font $font
+      button $sf.f$i.sym -text Sym -padx 4 -borderwidth 1 -pady 0 -font $font \
+             -command "xschem switch $current_win; cellview_edit_sym $sf.f$i.l"
+      button $sf.f$i.sch -text Sch -padx 4 -borderwidth 1 -pady 0 -font $font \
+             -command "xschem switch $current_win; cellview_edit_item $symbol $sf.f$i.s"
 
-      if {!$upd} {
-        frame $sf.f$i
-        pack $sf.f$i -side top -fill x
-        label  $sf.f$i.l -text $symbol -width 30 -anchor w -padx 4 -borderwidth 1 \
-          -relief sunken -pady 1 -font $font
+      if {$derived_symbol} {
+        $sf.f$i.l configure -fg $instfg
+        $sf.f$i.i configure -fg $instfg
+      }
+
+      $sf.f$i.s delete 0 end
+      if {$sym_spice_sym_def eq {}} {
         if {$derived_symbol} {
-          $sf.f$i.l configure -fg $instfg
-        }
-        # puts $sf.f$i.s
-        entry $sf.f$i.s -width 45 -borderwidth 1 -relief sunken -font $font
-        button $sf.f$i.sym -text Sym -padx 4 -borderwidth 1 -pady 0 -font $font \
-               -command "cellview_edit_sym $sf.f$i.l"
-        button $sf.f$i.sch -text Sch -padx 4 -borderwidth 1 -pady 0 -font $font \
-               -command "cellview_edit_item $symbol $sf.f$i.s"
-        if {$sym_spice_sym_def eq {}} {
+          # wanted to put also $from_inst here, but entry content is used in cellview_setlabels
+          #                        |
           $sf.f$i.s insert 0 $sym_sch
         } else {
-          if {$derived_symbol} {
-            $sf.f$i.s insert 0 {defined in instance spice_sym_def}
-          } else {
-            $sf.f$i.s insert 0 {defined in symbol spice_sym_def}
-          }
+          $sf.f$i.s insert 0 $sym_sch
+        }
+      } else {
+        if {$derived_symbol} {
+          $sf.f$i.s insert 0 "$inst_schematic, defined in instance spice_sym_def"
+        } else {
+          $sf.f$i.s insert 0 "[file rootname [get_cell $sym_sch 0]], defined in symbol spice_sym_def"
         }
       }
 
@@ -2171,18 +2212,25 @@ proc cellview { {derived_symbols {}} {upd 0}} {
       balloon $sf.f$i.s $f
 
       cellview_setlabels $sf.f$i.s $symbol $derived_symbol
-      if {!$upd} {
-        pack $sf.f$i.l $sf.f$i.s -side left -fill x -expand 1
-        pack $sf.f$i.sch $sf.f$i.sym -side left
-      }
+      pack $sf.f$i.l $sf.f$i.i $sf.f$i.s -side left -fill x -expand 1
+      pack $sf.f$i.sch $sf.f$i.sym -side left
     }
   }
 
-  if {$upd} {return}
-
   frame .cv.bottom
-  button .cv.bottom.update -text Update -command "cellview [list $derived_symbols] 1; xschem reload_symbols"
-  pack .cv.bottom.update -side left
+  button .cv.bottom.update -text Update \
+     -command "xschem switch $current_win; cellview [list $derived_symbols] 1; xschem reload_symbols"
+  button .cv.bottom.ok -text OK -command {
+    set cellview_geometry [winfo geometry .cv]
+    destroy .cv
+  }
+
+  wm protocol .cv  WM_DELETE_WINDOW {
+    .cv.bottom.ok invoke
+  } 
+
+
+  pack .cv.bottom.update .cv.bottom.ok -side left
   label .cv.bottom.status -text {STATUS LINE}
   pack .cv.bottom.status -fill x -expand yes
   pack .cv.top -side top -fill x -expand no
@@ -2190,7 +2238,22 @@ proc cellview { {derived_symbols {}} {upd 0}} {
   pack .cv.bottom -side top -fill x -expand no
   sframeyview .cv.center place
   set maxsize [expr {[winfo height ${sf}] + [winfo height .cv.top] + [winfo height .cv.bottom]}]
-  wm maxsize .cv 9999 $maxsize
+
+  set width  \
+      [expr {[winfo width .cv.top.sym] + [winfo width .cv.top.inst] +
+             [winfo width .cv.top.sch] + [winfo width .cv.top.pad] + 80}]
+
+  if {$upd == 0} {
+    wm maxsize .cv 9999 $maxsize
+  }
+  if {![info exists cellview_geometry]} {
+    wm geometry .cv ${width}x${maxsize}
+    update idletasks
+    set cellview_geometry [winfo geometry .cv]
+  } else {
+    wm geometry .cv $cellview_geometry
+  }
+
   bind .cv.center.f <Configure> {sframeyview .cv.center}
   bind .cv <ButtonPress-4> { sframeyview .cv.center scroll -0.1}
   bind .cv <ButtonPress-5> { sframeyview .cv.center scroll 0.1}
@@ -2200,42 +2263,49 @@ proc cellview { {derived_symbols {}} {upd 0}} {
 
 ############ traversal
 proc traversal_setlabels {w parent_sch instname inst_sch sym_sch default_sch
-                          inst_spice_sym_def sym_spice_sym_def} {
+                          inst_spice_sym_def sym_spice_sym_def type {upd 0}} {
   global traversal dark_gui_colorscheme netlist_type
   set sf .trav.center.f.scrl
 
   set save_netlist_type [xschem get netlist_type]
-  # puts "traversal_setlabels: $w parent: |$parent_sch| inst: $instname def: $sym_sch $inst_sch --> [$w get]"
-  # update schematic
-  if {$parent_sch ne {} && $sym_spice_sym_def eq {} &&  $inst_spice_sym_def eq {} } {
-    set current [xschem get current_name]
-    if { $inst_sch ne [$w get] } {
-      xschem load -undoreset -nodraw $parent_sch
-      if { [$w get] eq  $sym_sch} {
-        xschem setprop -fast instance $instname schematic  ;# remove schematic attr on instance
-      } else {
-        xschem setprop -fast instance $instname schematic [$w get]  ;# set schematic attr on instance
+  # puts "  traversal_setlabels: $w parent: |$parent_sch| "
+  # puts "      inst: $instname def: $sym_sch $inst_sch --> [$w get]"
+
+  ## update schematic
+  if {$parent_sch ne {}} {
+    if {$upd && $traversal(topname) ne $parent_sch} {
+      xschem load -noundoreset -nofullzoom -nodraw $parent_sch
+    }  
+    if {$sym_spice_sym_def eq {} && 
+        $inst_spice_sym_def eq {} && $type eq {subcircuit}} {
+      if { $inst_sch ne [$w get] } {
+        if { [$w get] eq  $sym_sch} {
+          xschem setprop -fast instance $instname schematic  ;# remove schematic attr on instance
+        } else {
+          xschem setprop -fast instance $instname schematic [$w get]  ;# set schematic attr on instance
+        }
+        xschem set_modify 3 ;# set only modified flag to force a save, do not update window/tab titles
+        xschem save fast
+        set inst_sch [$w get]
+        # puts "inst_sch set to: $inst_sch"
+        set netlist_type $save_netlist_type
+        xschem set netlist_type $netlist_type
       }
-      xschem set_modify 3 ;# set only modified flag to force a save, do not update window/tab titles
-      xschem save fast
-      set inst_sch [$w get]
-      # puts "inst_sch set to: $inst_sch"
-      xschem load -undoreset -nodraw $current
-      set netlist_type $save_netlist_type
-      xschem set netlist_type $netlist_type
     }
   }
-  # /update schematic
+  if {$upd && $traversal(topname) ne $parent_sch} {
+    xschem load -noundoreset -nofullzoom -nodraw $traversal(topname)
+  }
+  ## /update schematic
+
   if {$dark_gui_colorscheme} {
     set instfg orange1
     set symfg SeaGreen1
-    set instbg orange4
     set symbg SeaGreen4
     set missingbg IndianRed4
   } else {
     set instfg orange4
     set symfg SeaGreen4
-    set instbg Orange1
     set symbg SeaGreen1
     set missingbg IndianRed1
   }
@@ -2253,7 +2323,7 @@ proc traversal_setlabels {w parent_sch instname inst_sch sym_sch default_sch
     } elseif {[$w get] eq $sym_sch} {
       $w configure -bg $symbg
     } elseif {[$w get] eq $inst_sch} {
-      $w configure -bg $instbg
+      $w configure -fg $instfg
     }
   }
 }
@@ -2264,8 +2334,11 @@ proc traversal {{only_subckts 1} {all_hierarchy 1}} {
   set traversal(only_subckts) $only_subckts
   set traversal(all_hierarchy) $all_hierarchy
   set traversal(cnt) 0
+  set traversal(toplevel) [xschem get currsch]
+  set traversal(topname) [xschem get current_name]
   set save_keep $keep_symbols
   set keep_symbols 1
+  set current_win [xschem get current_win_path]
   xschem unselect_all
   xschem set no_draw 1 ;# disable screen update
   xschem set no_undo 1 ;# disable undo
@@ -2280,21 +2353,23 @@ proc traversal {{only_subckts 1} {all_hierarchy 1}} {
   frame .trav.top
   label .trav.top.inst -text {INSTANCE} -width 25 -bg grey60 -anchor w -padx 4 -font $font
   label .trav.top.sym  -text {SYMBOL} -width 30 -bg grey60 -anchor w -padx 4 -font $font
-  label .trav.top.sch  -text SCHEMATIC -width 45 -bg grey60 -anchor w -padx 4 -font $font
+  label .trav.top.sch  -text NETLIST -width 45 -bg grey60 -anchor w -padx 4 -font $font
   label .trav.top.pad  -text {        } -bg grey60 -font $font
   pack .trav.top.inst -side left -fill x -expand 1
   pack .trav.top.sym .trav.top.sch -side left -fill x
   pack .trav.top.pad -side left -fill x
   frame .trav.center
   set sf [sframe .trav.center]
-  hier_traversal 0 $only_subckts $all_hierarchy
+  hier_traversal 0 $only_subckts $all_hierarchy $current_win
   xschem set no_draw 0
   xschem set no_undo 0
   set keep_symbols $save_keep
 
   frame .trav.bottom
   label .trav.bottom.status -text {STATUS LINE}
-  pack .trav.bottom.status -fill x -expand yes
+  button .trav.bottom.ok -text OK
+  pack .trav.bottom.ok -side left
+  pack .trav.bottom.status -fill x -expand yes -side left
   pack .trav.top -side top -fill x -expand no
   pack .trav.center -side top -fill both -expand yes
   pack .trav.bottom -side top -fill x -expand no
@@ -2319,7 +2394,7 @@ proc traversal {{only_subckts 1} {all_hierarchy 1}} {
 }
 
 # recursive procedure
-proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1}} {
+proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1} {current_win {}}} {
   global nolist_libs traversal
 
   if {[info tclversion] >= 8.5} {
@@ -2328,7 +2403,7 @@ proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1}} {
     set font fixed
   }
   set parent_sch [xschem get current_name]
-  # puts $parent_sch
+  # puts "hier_traversal: $parent_sch"
   set sf .trav.center.f.scrl
   set done_print 0
   set schpath [xschem get sch_path]
@@ -2345,7 +2420,7 @@ proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1}} {
     set schematic [xschem get_sch_from_sym $i]
     set sch_exists [expr {[file exists $schematic] ? {} : {**missing**}}]
     set inst_sch [rel_sym_path $schematic]
-    set sch_rootname [file tail [file rootname $inst_sch]]
+    set sch_rootname [get_cell $inst_sch 0]
     set inst_spice_sym_def [xschem getprop instance $i spice_sym_def]
     set sym_spice_sym_def [xschem getprop instance $i cell::spice_sym_def]
     if {$only_subckts && ($type ne {subcircuit})} { continue }
@@ -2372,9 +2447,9 @@ proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1}} {
     entry $sf.f$cnt.s -width 45 -borderwidth 1 -relief sunken -font $font
     if {$type eq {subcircuit}} {
       if {$inst_spice_sym_def ne {}} {
-        $sf.f$cnt.s insert 0 "$sch_rootname defined in instance spice_sym_def"
+        $sf.f$cnt.s insert 0 "$sch_rootname, defined in instance spice_sym_def"
       } elseif {$sym_spice_sym_def ne {}} {
-        $sf.f$cnt.s insert 0 "$sch_rootname defined in symbol spice_sym_def"
+        $sf.f$cnt.s insert 0 "$sch_rootname, defined in symbol spice_sym_def"
       } else {
         $sf.f$cnt.s insert 0 "$inst_sch"
       }
@@ -2394,15 +2469,17 @@ proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1}} {
             }"
     button $sf.f$cnt.upd -text Upd  -padx 4 -borderwidth 1 -pady 0 -font $font \
       -command "
+        xschem switch $current_win
         traversal_setlabels $sf.f$cnt.s [list $parent_sch] [list $instname] [list $inst_sch] \
-        [list $sym_sch] [list $default_sch] [list $inst_spice_sym_def] [list $sym_spice_sym_def]
+        [list $sym_sch] [list $default_sch] [list $inst_spice_sym_def] [list $sym_spice_sym_def] \
+        [list $type] 1
         set traversal(geom) \[winfo geometry .trav\]
         destroy .trav
         traversal $traversal(only_subckts) $traversal(all_hierarchy)
       "
 
     traversal_setlabels $sf.f$cnt.s $parent_sch $instname $inst_sch $sym_sch \
-                        $default_sch $inst_spice_sym_def $sym_spice_sym_def
+                        $default_sch $inst_spice_sym_def $sym_spice_sym_def $type 0
     pack $sf.f$cnt.i -side left -fill x -expand 1
     pack $sf.f$cnt.l $sf.f$cnt.s -side left -fill x
     pack $sf.f$cnt.bsym $sf.f$cnt.bsch $sf.f$cnt.upd -side left
@@ -2410,12 +2487,15 @@ proc hier_traversal {{level 0} {only_subckts 0} {all_hierarchy 1}} {
     if {$type eq {subcircuit} && $all_hierarchy} {
       xschem select instance $i fast nodraw
       set descended [xschem descend 1 6]
+      # puts "descend into $instname"
       if {$descended} {
         incr level
-        set dp [hier_traversal $level $only_subckts 1]
+        set dp [hier_traversal $level $only_subckts 1 $current_win]
+        # puts "descended, go_back"
         xschem go_back 2
         incr level -1
       } else { ;# descended into a blank schematic. Go back.
+        # puts "Not descended, go_back"
         xschem go_back 2
       }
     }
@@ -3111,7 +3191,9 @@ proc graph_add_nodes {} {
   }
   if {$change_done} {
     set tag [.graphdialog.center.right.text1 tag names insert]
-    if { $tag eq {}} {set tag [.graphdialog.center.right.text1 tag names {insert - 1 char}]}
+    if { $tag eq {}} {
+      set tag [.graphdialog.center.right.text1 tag names {insert - 1 char}]
+    }
     .graphdialog.center.right.text1 insert {insert lineend + 1 char} $sel
     # insert $graph_sel_color colors along with inserted nodes, so previous wave colors are preserved
     if { [regexp {^t} $tag]} {
@@ -3227,7 +3309,9 @@ proc graph_change_wave_color {{wave {}}} {
       xschem draw_graph $graph_selected
     } else {
       set tag [.graphdialog.center.right.text1 tag names insert]
-      # if { $tag eq {}} {set tag [.graphdialog.center.right.text1 tag names {insert - 1 char}]}
+      if {$tag eq {}} {
+        set tag [.graphdialog.center.right.text1 tag names {insert - 1 char}]
+      }
       if { [regexp {^t} $tag]} {
         set index [string range $tag 1 end]
         set col  [xschem getprop rect 2 $graph_selected color]
@@ -3280,6 +3364,7 @@ proc graph_tag_nodes {txt} {
     set n 0
     if { $tt ne {} } {
       foreach t $tt c $cc {
+        # puts "t=$t c=$c"
         set col_idx [lindex $col $n]
         # add missing colors
         if {$col_idx eq {}} {
@@ -3287,7 +3372,9 @@ proc graph_tag_nodes {txt} {
           lappend col $graph_sel_color
         }
         set b [lindex $tctx::colors $col_idx]
-        .graphdialog.center.right.text1 tag add t$n "1.0 + $t chars" "1.1 + $c chars"
+        incr c
+        .graphdialog.center.right.text1 tag add t$n "1.0 + $t chars" "1.0 + $c chars"
+        # puts "range=[.graphdialog.center.right.text1 tag range t$n]"
         if { [info tclversion] > 8.4} {
           .graphdialog.center.right.text1 tag configure t$n -background $b -selectbackground grey40
         } else {
@@ -3535,6 +3622,7 @@ proc graph_edit_properties {n} {
     -command {
       if {$graph_autoload} {
         xschem setprop -fast rect 2 $graph_selected autoload 1
+        graph_set_raw_props
       } else {
         xschem setprop -fast rect 2 $graph_selected autoload 0
       }
@@ -3940,7 +4028,7 @@ proc graph_edit_properties {n} {
   if {$tmp eq {}} { set tmp 1.0}
   .graphdialog.top5.xmag insert 0 $tmp
 
-  set tmp [xschem getprop rect 2 $graph_selected ylabmag]`
+  set tmp [xschem getprop rect 2 $graph_selected ylabmag]
   if {$tmp eq {}} { set tmp 1.0}
   .graphdialog.top5.ymag insert 0 $tmp
 
@@ -4135,6 +4223,7 @@ proc open_sub_schematic {{inst {}} {inst_number 0}} {
   global search_schematic
   set rawfile {}
   set n_sel [xschem get lastsel]
+  set current_win_path [xschem get current_win_path] ;# .drw or .x1.drw or .x2.drw ...
 
   if { $inst eq {} && $n_sel == 0} {
     if {$search_schematic == 1} {
@@ -4158,18 +4247,22 @@ proc open_sub_schematic {{inst {}} {inst_number 0}} {
   if {[xschem raw loaded] >= 0} {
     set rawfile [xschem raw_query rawfile]
     set sim_type [xschem raw_query sim_type]
+    set raw_level [xschem get raw_level]
   }
   set res [xschem schematic_in_new_window force]
+  set new_window_path [xschem get last_created_window] ;# something like .x1.drw
+  xschem copy_hierarchy $current_win_path $new_window_path
   # if successfull descend into indicated sub-schematic
   if {$res} {
     xschem copy_hilights
-    xschem new_schematic switch [xschem get last_created_window]
+    xschem new_schematic switch $new_window_path
     if { $rawfile ne {}} {
       if {$sim_type eq {op}} {
         xschem annotate_op $rawfile
       } else {
         xschem raw_read $rawfile $sim_type
       }
+      xschem set raw_level $raw_level
     }
     xschem select instance $inst fast
     xschem descend
@@ -4370,50 +4463,73 @@ namespace eval c_toolbar {
 ## end c_toolbar namespace
 
 proc file_dialog_set_colors1 {} {
-  global file_dialog_files1 dircolor
+  global file_dialog_files1 dircolor file_dialog_names1
+  set def_fg [option get . foreground {}]
+  set def_bg [option get . background {}]
   for {set i 0} { $i< [.load.l.paneleft.list index end] } { incr i} {
-    set maxlen 0
     set name "[lindex $file_dialog_files1 $i]"
-    .load.l.paneleft.list itemconfigure $i -foreground black -selectforeground black
+    set col {}
+    set bg {}
+    set maxlen 0
     foreach j [array names dircolor] {
       set pattern $j
-      set color $dircolor($j)
-      set len [string length [regexp -inline $pattern $name]]
+      set color [lindex $dircolor($j) 0]
+      set background [lindex $dircolor($j) 1]
+      set len [string length [regexp -inline $pattern [lindex $file_dialog_names1 $i]]]
       if { $len > $maxlen } {
-        .load.l.paneleft.list itemconfigure $i -foreground $color -selectforeground $color
+        set col $color
+        set bg $background
         set maxlen $len
       }
     }
+    if {$col eq {}} {set col $def_fg}
+    if {$bg eq {}} {set bg $def_bg}
+    .load.l.paneleft.list itemconfigure $i -foreground $col   -selectforeground $col \
+                                           -background $bg
   }
 }
 
 proc file_dialog_set_colors2 {} {
-  global file_dialog_index1 file_dialog_files2 dircolor file_dialog_files1
+  global file_dialog_index1 file_dialog_files2 dircolor file_dialog_files1 file_dialog_names1
+  global dark_gui_colorscheme
   set dir1 [abs_sym_path [lindex $file_dialog_files1 $file_dialog_index1]]
-  for {set i 0} { $i< [.load.l.paneright.f.list index end] } { incr i} {
-    set maxlen 0
+  set maxlen 0
+  set col [option get . foreground {}]
+  set bg {}
+  set name1 [lindex $file_dialog_names1 $file_dialog_index1]
+  foreach j [array names dircolor] {
+    set pattern $j
+    set color [lindex $dircolor($j) 0]
+    set background [lindex $dircolor($j) 1]
+    set len [string length [regexp -inline $pattern $name1]]
+    if { $len > $maxlen } {
+      set col $color
+      set bg $background
+      set maxlen $len
+    }
+  }
+  set def_bg [option get . background {}]
+  if {$dark_gui_colorscheme} { set dircol {cyan} } else { set dircol {blue} }
+  # puts "$name1 $col $bg"
+  for {set i 0} { $i< [.load.l.paneright.f.list index end] } {incr i} {
     set name "$dir1/[lindex $file_dialog_files2 $i]"
     if {[ file isdirectory $name]} {
-      .load.l.paneright.f.list itemconfigure $i -foreground blue
-      foreach j [array names dircolor] {
-        set pattern $j
-        set color $dircolor($j)
-        set len [string length [regexp -inline $pattern $dir1]]
-        # puts "len=$len\npattern=$pattern\nname=$name\n\n\n"
-        if { $len > $maxlen } {
-          .load.l.paneright.f.list itemconfigure $i -foreground $color -selectforeground $color
-          set maxlen $len
-        }
-      }
-
+      .load.l.paneright.f.list itemconfigure $i -foreground $dircol -selectforeground $dircol \
+                   -background $def_bg 
     } else {
-      .load.l.paneright.f.list itemconfigure $i -foreground black
+      if {$bg ne {}} {
+        .load.l.paneright.f.list itemconfigure $i -foreground $col -selectforeground $col \
+                                                  -background $bg  
+      } else {
+        .load.l.paneright.f.list itemconfigure $i -foreground $col    -selectforeground $col \
+                                                  -background $def_bg 
+      }
     }
   }
 }
 
 proc file_dialog_set_names1 {} {
-  global file_dialog_names1 file_dialog_files1 load_file_dialog_fullpath
+  global file_dialog_names1 file_dialog_files1 load_file_dialog_fullpath lib_alias
 
   set file_dialog_names1 {}
   foreach i $file_dialog_files1 {
@@ -4421,6 +4537,9 @@ proc file_dialog_set_names1 {} {
       set item $i
     } else {
       set item [get_cell $i 0]
+    }
+    if {[info exists lib_alias($item)]} {
+      set item $lib_alias($item)
     }
     lappend file_dialog_names1 $item
   }
@@ -4688,6 +4807,93 @@ proc load_additional_files {} {
   }
 }
 
+proc fuzzy_subseq_score {q s} {
+  set q [string tolower $q]
+  regsub -all { } $q {} q
+  set s [string tolower $s]
+  set n [string length $q]
+  set m [string length $s]
+  if {$n == 0} { return 0 }
+  if {$n > $m} { return -1 }
+  set qi 0
+  set last -2
+  set score 0
+  for {set i 0} {$i < $m && $qi < $n} {incr i} {
+    if {[string index $q $qi] eq [string index $s $i]} {
+      incr score 1
+      if {$i == $last + 1} { incr score 3 }
+      if {$i == 0} {
+        incr score 6
+      } else {
+        if {[regexp {[/_\-. ]} [string index $s [expr {$i-1}]]]} { incr score 4 }
+      }
+      set last $i
+      incr qi
+    }
+  }
+  if {$qi < $n} { return -1 }
+  return [expr {$score * 100 - $last}]
+}
+
+proc fuzzy_match_glob {pat name} {
+  if {[regexp {^(.*)\{([^{}]+)\}(.*)$} $pat -> pre alts post]} {
+    foreach alt [split $alts ","] {
+      if {[string match "${pre}${alt}${post}" $name]} { return 1 }
+    }
+    return 0
+  }
+  return [string match $pat $name]
+}
+
+proc fuzzy_walk {dir maxdepth} {
+  set out {}
+  if {$maxdepth <= 0} { return $out }
+  if {[catch {glob -nocomplain -directory $dir -tails *} entries]} { return $out }
+  foreach e $entries {
+    if {[string index $e 0] eq "."} { continue }
+    set full [file join $dir $e]
+    if {[file isdirectory $full]} {
+      foreach sub [fuzzy_walk $full [expr {$maxdepth - 1}]] {
+        lappend out [file join $e $sub]
+      }
+    } else {
+      lappend out $e
+    }
+  }
+  return $out
+}
+
+proc fuzzy_filter_files2 {q} {
+  global file_dialog_files2 file_dialog_dir1 file_dialog_ext
+  if {$q eq {}} {
+    setglob $file_dialog_dir1
+    return
+  }
+  set all [fuzzy_walk $file_dialog_dir1 6]
+  set ext_pat $file_dialog_ext
+  if {$ext_pat ne {} && $ext_pat ne {*}} {
+    set filt {}
+    foreach f $all {
+      if {[fuzzy_match_glob $ext_pat [file tail $f]]} { lappend filt $f }
+    }
+    set all $filt
+  }
+  set scored {}
+  foreach name $all {
+    set sc [fuzzy_subseq_score $q $name]
+    if {$sc >= 0} { lappend scored [list $sc $name] }
+  }
+  set sorted [lsort -decreasing -integer -index 0 $scored]
+  set out {}
+  set n 0
+  foreach pair $sorted {
+    if {$n >= 500} break
+    lappend out [lindex $pair 1]
+    incr n
+  }
+  set file_dialog_files2 $out
+}
+
 # global_initdir: name of global variable containing the initial directory
 # loadfile: set to 0 if calling for saving instead of loading a file
 #           set to 2 for non blocking operation (symbol insertion)
@@ -4725,10 +4931,10 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   set_ne file_dialog_files2 {}
   panedwindow  .load.l -orient horizontal -height 8c
   if { $loadfile == 2} {frame .load.l.recent -takefocus 0}
-  frame .load.l.paneleft -takefocus 0 -highlightcolor red -highlightthickness 2 -bg {grey90} \
+  frame .load.l.paneleft -takefocus 0 -highlightcolor red -highlightthickness 2 \
     -highlightbackground [option get . background {}]
   eval [subst {listbox .load.l.paneleft.list -listvariable file_dialog_names1 -width 40 -height 12 \
-    -fg black -background {grey90} -highlightthickness 0 -relief flat -borderwidth 0 \
+    -highlightthickness 0 -relief flat -borderwidth 0 \
     -yscrollcommand ".load.l.paneleft.yscroll set" -selectmode browse \
     -xscrollcommand ".load.l.paneleft.xscroll set" -exportselection 0}]
   if { ![catch {.load.l.paneleft.list cget -justify}]} {
@@ -4775,8 +4981,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     set selmode extended
   }
 
-  listbox .load.l.paneright.f.list  -background {grey90} -listvariable file_dialog_files2 -width 20 -height 12\
-    -fg black -highlightcolor red -highlightthickness 2 \
+  listbox .load.l.paneright.f.list -listvariable file_dialog_files2 -width 20 -height 12\
+    -highlightcolor red -highlightthickness 2 \
     -highlightbackground [option get . background {}] \
     -yscrollcommand ".load.l.paneright.f.yscroll set" -selectmode $selmode \
     -xscrollcommand ".load.l.paneright.f.xscroll set" -exportselection 0
@@ -4858,6 +5064,21 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
     set file_dialog_retval {   }
   }
 
+  label .load.buttons_bot.fzflab -text { Fuzzy:}
+  entry .load.buttons_bot.fzf -width 18 -highlightcolor red -highlightthickness 2 \
+    -highlightbackground [option get . background {}]
+  entry_replace_selection .load.buttons_bot.fzf
+  bind .load.buttons_bot.fzf <KeyRelease> {
+    fuzzy_filter_files2 [.load.buttons_bot.fzf get]
+    file_dialog_set_colors2
+    set file_dialog_retval {   }
+  }
+  bind .load.buttons_bot.fzf <FocusIn> {
+    fuzzy_filter_files2 [.load.buttons_bot.fzf get]
+    file_dialog_set_colors2
+    set file_dialog_retval {   }
+  }
+
   button .load.buttons.up -width 5 -text Up -command {load_file_dialog_up  $file_dialog_dir1} -takefocus 0
   label .load.buttons.mkdirlab -text { New dir: }
   entry .load.buttons.newdir -width 16 -takefocus 0
@@ -4892,6 +5113,8 @@ proc load_file_dialog {{msg {}} {ext {}} {global_initdir {INITIALINSTDIR}}
   pack .load.buttons.rmdir .load.buttons.mkdir -side right
   pack .load.buttons_bot.srclab -side left
   pack .load.buttons_bot.src -side left
+  pack .load.buttons_bot.fzflab -side left
+  pack .load.buttons_bot.fzf -side left
   pack .load.buttons_bot.label -side left
   pack .load.buttons_bot.entry -side left -fill x -expand true
 
@@ -5095,7 +5318,7 @@ proc file_chooser_draw_preview {f} {
 
 
     ## preview window draw causes a save / restore context.
-    ## restore_ctx writes XSCHEM_LIBRARY_PATH --> set_paths --> .ins.top4.upd invoke
+    ## restore_ctx writes XSCHEM_LIBRARY_PATH --> set_paths --> .ins.top4.reset invoke
     ## this rewrites the file_chooser(dirtails) list variable and list loses selection...
     # .ins.center.leftdir.l selection set  [.ins.center.leftdir.l index active]
 
@@ -5114,10 +5337,10 @@ proc file_chooser_draw_preview {f} {
 proc file_chooser_preview {} {
   # puts "file_chooser_preview"
   global file_chooser
-  if {[info exists file_chooser(f)]} {
+  if {[info exists file_chooser(preview)]} {
     after cancel ".ins.center.right configure -bg white"
-    after cancel "file_chooser_draw_preview {$file_chooser(f)}"
-    unset file_chooser(f)
+    after cancel "file_chooser_draw_preview {$file_chooser(preview)}"
+    unset file_chooser(preview)
   }
   xschem preview_window close .ins.center.right {}
   bind .ins.center.right <Expose> {}
@@ -5129,7 +5352,7 @@ proc file_chooser_preview {} {
     set f [lindex $file_chooser(fullpathlist) $sel]
     # puts "file_chooser_preview: f=$f"
     if {$f ne {}} {
-      set file_chooser(f) $f
+      set file_chooser(preview) $f
       set type [is_xschem_file $f]
       if {$type ne {0}} {
         set dir [rel_sym_path $f]
@@ -5147,6 +5370,7 @@ proc file_chooser_preview {} {
 proc file_chooser_dirlist {} {
   # puts "file_chooser_dirlist [xschem get topwindow]"
   global file_chooser pathlist dark_gui_colorscheme new_file_browser_depth new_file_browser_ext
+  global lib_alias dircolor
   if {$dark_gui_colorscheme} { set col {cyan} } else { set col {blue} }
   # regenerate list of dirs
   set file_chooser(dirs) [
@@ -5165,6 +5389,9 @@ proc file_chooser_dirlist {} {
         set t [substring_remove $pp $i begin]
         # puts "$p\n  $pp\n  $i\n  $t"
         if {$t ne $i} {
+          if {[info exists lib_alias($i)]} {
+            set t $lib_alias($i)
+          }
           lappend file_chooser(dirtails) $t
           set found 1
           break
@@ -5174,10 +5401,36 @@ proc file_chooser_dirlist {} {
     if {$found == 0} {lappend file_chooser(dirtails) [file tail $i]}
   }
   set i 0
+  if {$dark_gui_colorscheme} { set def_fg {cyan} } else { set def_fg {blue} }
+  set def_bg [option get . background {}]
   foreach p $file_chooser(dirs) {
     # puts "--> $p"
+    if {[info exists lib_alias($p)]} {
+      set filename [lindex $file_chooser(dirtails) $i]
+    } else {
+      set filename $p
+    }
     if {[lsearch -exact $path_l $p] != -1} {
-      .ins.center.leftdir.l itemconfigure $i -foreground $col -selectforeground $col
+      set maxlen 0
+      set col {}
+      set bg {}
+      foreach j [array names dircolor] {
+        set pattern $j
+        set custom_color [lindex $dircolor($j) 0]
+        set custom_bg [lindex $dircolor($j) 1]
+        set len [string length [regexp -inline $pattern $filename]]
+        if { $len > $maxlen } {
+          set col $custom_color
+          set bg $custom_bg
+          set maxlen $len
+        }
+      }
+      if {$col eq {}} {set col $def_fg}
+      if {$bg eq {}} {set bg $def_bg}
+
+      .ins.center.leftdir.l itemconfigure $i \
+            -foreground $col -selectforeground $col \
+            -background $bg 
     }
     incr i
   }
@@ -5185,21 +5438,46 @@ proc file_chooser_dirlist {} {
 
 #### fill list of files matching pattern
 proc file_chooser_filelist {} {
-  global file_chooser new_file_browser_ext
-
+  global file_chooser new_file_browser_ext new_file_browser_depth dircolor lib_alias
   if {![info exists file_chooser(dirs)]} {return}
   set sel [lindex [.ins.center.leftdir.l curselection] 0]
   if {$sel eq {}} { return }
   set file_chooser(dirindex) $sel
   set path [lindex $file_chooser(dirs) $sel]
+
+  set to_match $path
+  if {[info exists lib_alias($path)]} {
+    set to_match [lindex $file_chooser(dirtails) $sel]
+  }
+  set col {}
+  set bg {}
+  set maxlen 0
+  foreach j [array names dircolor] {
+    set pattern $j
+    set color [lindex $dircolor($j) 0]
+    set background [lindex $dircolor($j) 1]
+    set len [string length [regexp -inline $pattern $to_match]]
+    if { $len > $maxlen } {
+      set col $color
+      set bg $background
+      set maxlen $len
+    } 
+  }
+  if {$col eq {}} {set col [option get . foreground {}]}
+  if {$bg eq {}} {set bg [option get . background {}]}
   set file_chooser(abs_filename) $path
+  set file_chooser(rel_filename) {}
   # check if regex is valid
   set regex $file_chooser(regex)
   set err [catch {regexp $regex {12345}} res]
   if {$err} {set regex {}}
   set f {}
   if {$path ne {} } {
-    set f [match_file $regex [list $path] 0 $file_chooser(fullpath)]
+    if {$file_chooser(searchall) == 0} {
+      set f [match_file $regex [list $path] 0 $file_chooser(fullpath)]
+    } else {
+      set f [match_file $regex {} $new_file_browser_depth $file_chooser(fullpath)]
+    }
   }
   set filelist {}
   set file_chooser(fullpathlist) {}
@@ -5216,7 +5494,11 @@ proc file_chooser_filelist {} {
   set err [catch {regexp $nfbe {12345}} res1]
   if {$err} {set nfbe {}}
   foreach i $f {
-    set fname [file tail $i]
+    if {$file_chooser(searchall) == 0} {
+      set fname [file tail $i]
+    } else {
+      set fname $i
+    }
     set err [catch {regexp $nfbe $fname} type]
     if {!$err && $type} {
       lappend filelist $fname
@@ -5226,6 +5508,8 @@ proc file_chooser_filelist {} {
   set file_chooser(nitems) [llength $filelist]
   # assign listbox variable all at the end, it is faster...
   set file_chooser(files) $filelist
+  .ins.center.left.l configure -foreground $col -background $bg \
+                               -selectforeground $col
 }
 
 # called when double clicking a file item in the file_chooser file listbox
@@ -5288,11 +5572,23 @@ proc file_chooser_place {action} {
 proc file_chooser_select {f} {
   global file_chooser
   if {$f ne {} && [info exists file_chooser(dirs)] && [info exists file_chooser(files)]} {
-    set dir [file dirname $f]
-    set file [file tail $f]
-    set dirtail [file tail $dir]
+    set isdir 0
+    if {[lsearch -exact $file_chooser(dirs) $f] >= 0} { set isdir 1}
+    if {$isdir} {
+      set dir $f
+    } else {
+      set dir [file dirname $f]
+    }
+    if {$file_chooser(searchall) == 0} {
+      if {$isdir} {
+        set file {}
+      } else {
+        set file [file tail $f]
+      }
+    } else {
+      set file $f
+    }
     # puts "file=$file"
-    # puts "   dirtail=$dirtail"
     # puts "   dir=$dir"
     set dirindex [lsearch -exact  $file_chooser(dirs) $dir]
     if {$dirindex != -1} {
@@ -5302,247 +5598,19 @@ proc file_chooser_select {f} {
       .ins.center.leftdir.l selection set $dirindex
       .ins.center.leftdir.l see $dirindex
       file_chooser_filelist
-      set fileindex [lsearch -exact  $file_chooser(files) $file]
-      if {$fileindex != -1} {
-        # puts "fileindex=$fileindex"
-        .ins.center.left.l selection clear 0 end
-        .ins.center.left.l activate $fileindex
-        .ins.center.left.l selection set $fileindex
-        .ins.center.left.l see $fileindex
-        file_chooser_preview
-      }
-    }
-  }
-}
-
-#### Display preview of selected symbol and start sym placement
-proc file_chooser_search_all_draw_preview {f} {
-  global file_chooser
-  # puts "file_chooser_draw_preview"
-  if {[winfo exists .ins]} {
-    .ins.center.right configure -bg {}
-    xschem preview_window create .ins.center.right {}
-    xschem preview_window draw .ins.center.right "$f"
-  
-
-    ## preview window draw causes a save / restore context.
-    ## restore_ctx writes XSCHEM_LIBRARY_PATH --> set_paths --> .ins.top4.upd invoke
-    ## this rewrites the file_chooser(dirtails) list variable and list loses selection...
-    # .ins.center.leftdir.l selection set  [.ins.center.leftdir.l index active]
-  
-    bind .ins.center.right <Expose> "xschem preview_window draw .ins.center.right {$f}"
-    bind .ins.center.right <Configure> "xschem preview_window draw .ins.center.right {$f}"
-    if {$file_chooser(action) eq {symbol}} {
-      file_chooser_search_all_place symbol
-    } 
-    if {$file_chooser(action) eq {symbol1}} {
-      set file_chooser(action) {load}
-      file_chooser_search_all_place symbol
-    }
-  }
-}
-
-proc file_chooser_search_all_preview {} {
-  # puts "file_chooser_preview"
-  global file_chooser
-  if {[info exists file_chooser(f)]} {
-    after cancel ".ins.center.right configure -bg white"
-    after cancel "file_chooser_draw_preview {$file_chooser(f)}"
-    unset file_chooser(f)
-  }
-  xschem preview_window close .ins.center.right {}
-  bind .ins.center.right <Expose> {}
-  bind .ins.center.right <Configure> {}
-  set sel [lindex [.searchall.c.lb curselection] 0]
-  if {$sel ne {} && [info exists file_chooser(searchall)]} {
-    # puts "set fileindex=$sel"
-    set f [lindex $file_chooser(searchall) $sel]
-    # puts "file_chooser_preview: f=$f" 
-    if {$f ne {}} {
-      set file_chooser(f) $f
-      set type [is_xschem_file $f]
-      if {$type ne {0}} {
-        set dir [rel_sym_path $f]
-        set file_chooser(abs_filename) $f
-        set file_chooser(rel_filename) $dir
-        # global used to cancel delayed script
-        after 200 "file_chooser_search_all_draw_preview {$f}"
-      } else {
-        after 200 {.ins.center.right configure -bg white}
-      }
-    }
-  }
-}
-
-proc file_chooser_search_all_place {action} {
-  # puts file_chooser_place
-  global file_chooser open_in_new_window
-  if {[xschem get semaphore] > 0} {return}
-  set sel [.searchall.c.lb index active]
-  if {$sel ne {}} {
-    set f [lindex $file_chooser(searchall) $sel]
-    if {$f ne {}} {
-      set type [is_xschem_file $f]
-      # puts "file_chooser_place: file=$f, type=$type"
-      if {$type ne {0}} {
-        if { [xschem get ui_state] & 8192 } {
-          xschem abort_operation
-        }
-        if {$action eq {symbol}} {
-          xschem place_symbol $f
-        } elseif {$action eq {load}} {
-          if {$open_in_new_window} {
-            xschem load_new_window $f
-          } else {
-            xschem load -gui $f
-          }
-        } elseif {$action eq {load_new_win}} {
-         xschem load_new_window $f
+      if {$file ne {}} {
+        set fileindex [lsearch -exact  $file_chooser(files) $file]
+        if {$fileindex != -1} {
+          # puts "fileindex=$fileindex"
+          .ins.center.left.l selection clear 0 end
+          .ins.center.left.l activate $fileindex
+          .ins.center.left.l selection set $fileindex
+          .ins.center.left.l see $fileindex
+          file_chooser_preview
         }
       }
     }
   }
-}
-
-# called when double clicking a file item in the file_chooser search all listbox
-proc file_chooser_search_all_open {{shift 0}} { 
-  global file_chooser
-  if {[xschem get semaphore] > 0} {return}
-  set sel [.searchall.c.lb index active]
-  if {$sel ne {}} {
-    set f [lindex $file_chooser(searchall) $sel]
-    if {$f ne {}} {
-      set type [is_xschem_file $f]
-      if {$type eq {SCHEMATIC}} {
-        if {$shift == 0} {
-          file_chooser_search_all_place load
-        } else {
-          file_chooser_search_all_place load_new_win
-        } 
-      } elseif {$type eq {SYMBOL}} {
-        if {$shift == 0} {
-          set file_chooser(action) {symbol1} ;# only one time insert symbol
-          file_chooser_search_all_preview
-        } else {
-          file_chooser_search_all_place load_new_win
-        }
-      }
-    }
-  }
-} 
-
-proc file_chooser_search_all {} {
-  global file_chooser new_file_browser_depth new_file_browser_ext USER_CONF_DIR
-  # just check if pattern is a valid regexp
-  set file_chooser(searchall) {}
-  set nfbe $new_file_browser_ext
-  set err [catch {regexp $nfbe {12345}} res1]
-  if {$err} {set nfbe {}}
-  set regex $file_chooser(regex)
-  # check if regex is valid
-  set err [catch {regexp $regex {12345}} res1]
-  if {$err} {set regex {}}
-  set nth 0
-  set f {}
-  if {$file_chooser(dirs) ne {} } {
-    set allfiles [
-      match_file $regex {} $new_file_browser_depth $file_chooser(fullpath)
-    ]
-    puts ""
-    foreach i $allfiles {
-      set err [catch {regexp $nfbe $i} type]
-      if {!$err && $type} {
-        lappend file_chooser(searchall) $i
-      }
-    }
-  }
-  if {[winfo exists .searchall]} {return}
-  toplevel .searchall
-  frame .searchall.t
-  frame .searchall.c
-  frame .searchall.b
-  listbox .searchall.c.lb -width 70 -height 28 -listvariable file_chooser(searchall) -selectmode single \
-     -yscrollcommand ".searchall.c.yscroll set" \
-     -xscrollcommand ".searchall.c.xscroll set"
-  scrollbar .searchall.c.yscroll -command ".searchall.c.lb yview"
-  scrollbar .searchall.c.xscroll -orient horiz -command ".searchall.c.lb xview"
-  pack  .searchall.c.yscroll -side right -fill y
-  pack  .searchall.c.xscroll -side bottom -fill x
-  pack  .searchall.c.lb -side bottom  -fill both -expand true
-
-  pack .searchall.t -fill x -expand true
-  pack .searchall.c -fill both -expand true
-  pack .searchall.b -fill x -expand true
-  bind .searchall.c.lb <Double-Button-1> {file_chooser_search_all_open 0}
-  bind .searchall.c.lb <Shift-Double-Button-1> {file_chooser_search_all_open r10}
-  bind .searchall.c.lb <<ListboxSelect>> {
-    if {[.searchall.c.lb curselection] ne {}} {
-      if { [xschem get ui_state] & 8192 } {
-        xschem abort_operation
-      }
-      file_chooser_search_all_preview
-    }
-  }
-
-  if { [info exists file_chooser(search_all_geometry)]} {
-    wm geometry .searchall "${file_chooser(search_all_geometry)}"
-  } elseif {[file exists $USER_CONF_DIR/file_chooser_search_all_geometry]} {
-      source $USER_CONF_DIR/file_chooser_search_all_geometry
-      set valid 0
-      set xmax [winfo screenwidth .]
-      set ymax [winfo screenheight .]
-      if {[info exists file_chooser(geometry)]} {
-        set n [scan $file_chooser(search_all_geometry) {%dx%d+%d+%d} x y dx dy]
-        if {$n == 4} {
-          # puts "xmax=$xmax, ymax=$ymax, x=$x, y=$y dx=$dx dy=$dy"
-          # off screen. do not use.
-          set valid 1
-          if { $dx > $xmax - 100 || $dy > $ymax - 100} {
-            set valid 0
-          }
-        }
-      }
-      if {$valid} {wm geometry .searchall "${file_chooser(search_all_geometry)}"}
-  } else {
-    # wm geometry .searchall 800x300
-  } 
-
-  bind .searchall <Configure> {
-    set file_chooser(search_all_geometry) [wm geometry .searchall]
-
-    write_data [string cat \
-      "set file_chooser(search_all_geometry) $file_chooser(search_all_geometry)\n" \
-    ] $USER_CONF_DIR/file_chooser_search_all_geometry
-  }
-
-
-
-  button .searchall.b.dismiss -takefocus 0 -text Dismiss -command {
-    if { [xschem get ui_state] & 8192 } {
-      xschem abort_operation
-    } else {
-      destroy .searchall
-    }
-  }
-
-  button .searchall.b.load -takefocus 0 -text {Open} -command {
-    file_chooser_search_all_place load
-  }
-  
-  button .searchall.b.load_new_win -takefocus 0 -text {Open in new Window / Tab} -command {
-    file_chooser_search_all_place load_new_win 
-  }
-  
-  button .searchall.b.sym -text {Place symbol} -takefocus 0 \
-     -command {
-       set file_chooser(action) {symbol1} ;# only one time insert symbol
-       file_chooser_search_all_preview
-     }
-
-  pack .searchall.b.dismiss .searchall.b.load .searchall.b.load_new_win .searchall.b.sym -side left
-  wm protocol .searchall WM_DELETE_WINDOW {.searchall.b.dismiss invoke}
-  bind .searchall <KeyPress-Escape> {.searchall.b.dismiss invoke}
-  return {}
 }
 
 proc file_chooser_search {{current {}}} {
@@ -5589,8 +5657,9 @@ proc file_chooser_search {{current {}}} {
     }
   }
   if {$f ne {}} {
-    file_chooser_select $f
+    file_chooser_select $f ;# calls file_chooser_filelist
   } else {
+    file_chooser_filelist
     if {$file_chooser(nth) > 0} {
       incr file_chooser(nth) -1
     } else {
@@ -5653,7 +5722,7 @@ proc file_chooser_edit_paths {} {
     set tctx::rcode 1
     set tctx::retval [.editpaths.center.paths get 1.0 {end - 1 chars}]
     file_chooser_set_paths
-    .ins.top4.upd invoke
+    .ins.top4.reset invoke
     destroy .editpaths
   }
 
@@ -5661,7 +5730,7 @@ proc file_chooser_edit_paths {} {
     set tctx::rcode 1
     set tctx::retval [.editpaths.center.paths get 1.0 {end - 1 chars}]
     file_chooser_set_paths
-    .ins.top4.upd invoke
+    .ins.top4.reset invoke
   }
   button .editpaths.bottom.dismiss -text Dismiss -command {
     destroy .editpaths
@@ -5674,7 +5743,7 @@ proc file_chooser_edit_paths {} {
     set tctx::rcode 1
     set tctx::retval [.editpaths.center.paths get 1.0 {end - 1 chars}]
     file_chooser_set_paths
-    .ins.top4.upd invoke
+    .ins.top4.reset invoke
     if {[winfo exists .editdata]} {destroy .editdata}
     editdata "set XSCHEM_LIBRARY_PATH {$XSCHEM_LIBRARY_PATH}" {XSCHEM_LIBRARY_PATH} char 0
   }
@@ -5700,15 +5769,17 @@ proc file_chooser_saveas {} {
     if {[file isdirectory $f]} {return}
     if {[xschem get modified]} { ;# modified
       if {[xschem get schname] eq $f} { ;# file name not changed
-        xschem saveas
-        .ins.top2.save configure -bg [option get . background {}]
+        if {[xschem saveas]} {
+          .ins.top2.save configure -bg [option get . background {}]
+        }
         file_chooser_filelist
       } else { ;# file name changed
         set answer [tk_messageBox -message "Warning: file $f already exists. Overwrite?" \
             -icon warning -parent .ins -type okcancel]
         if {$answer ne {ok}} { return }
-        xschem saveas
-        .ins.top2.save configure -bg [option get . background {}]
+        if {[xschem saveas]} {
+          .ins.top2.save configure -bg [option get . background {}]
+        }
         file_chooser_filelist
       }
     } else { ;# not modified
@@ -5718,14 +5789,16 @@ proc file_chooser_saveas {} {
         set answer [tk_messageBox -message "Warning: file $f already exists. Overwrite?" \
             -icon warning -parent .ins -type okcancel]
         if {$answer ne {ok}} { return }
-        xschem saveas
-        .ins.top2.save configure -bg [option get . background {}]
+        if {[xschem saveas]} {
+          .ins.top2.save configure -bg [option get . background {}]
+        }
         file_chooser_filelist
       }
     }
   } else { ;# file does not exist
-    xschem saveas $f
-    .ins.top2.save configure -bg [option get . background {}]
+    if {[xschem saveas $f]} {
+      .ins.top2.save configure -bg [option get . background {}]
+    }
     file_chooser_filelist
   }
 }
@@ -5745,7 +5818,81 @@ proc file_chooser_delete {} {
   }
 }
 
-#### maxdepth: how many levels to descend for each $paths directory (-1: no limit)
+proc fuzzy_chooser_inline {q} {
+  global file_chooser new_file_browser_depth new_file_browser_ext pathlist lib_alias
+  if {$q eq {}} {
+    set file_chooser(files) {}
+    set file_chooser(fullpathlist) {}
+    set file_chooser(nitems) 0
+    .ins.center.leftdir.l selection clear 0 end
+    file_chooser_dirlist
+    return
+  }
+  set nfbe $new_file_browser_ext
+  if {[catch {regexp $nfbe {12345}}]} { set nfbe {} }
+  set allfiles [match_file {} {} $new_file_browser_depth 1]
+  set scored {}
+  foreach f $allfiles {
+    if {$nfbe ne {}} {
+      set ok 0
+      catch {set ok [regexp $nfbe $f]}
+      if {!$ok} continue
+    }
+    set sc [fuzzy_subseq_score $q $f]
+    if {$sc >= 0} { lappend scored [list $sc $f] }
+  }
+  set sorted [lsort -decreasing -integer -index 0 $scored]
+  set hits {}
+  set n 0
+  foreach pair $sorted {
+    if {$n >= 500} break
+    lappend hits [lindex $pair 1]
+    incr n
+  }
+  set seen_dir [dict create]
+  set new_dirs {}
+  foreach f $hits {
+    set d [file dirname $f]
+    if {![dict exists $seen_dir $d]} {
+      dict set seen_dir $d 1
+      lappend new_dirs $d
+    }
+  }
+  set new_tails {}
+  foreach d $new_dirs {
+    set t {}
+    foreach p $pathlist {
+      set pp [file dirname $p]/
+      if {[string first $pp $d] == 0} {
+        if {[info exists lib_alias($d)]} {
+          set t $lib_alias($d)
+        } else {
+          set t [string range $d [string length $pp] end]
+        }
+        break
+      }
+    }
+    if {$t eq {}} { set t [file tail $d] }
+    lappend new_tails $t
+  }
+  set file_chooser(dirs) $new_dirs
+  set file_chooser(dirtails) $new_tails
+  set file_chooser(files) $hits
+  set file_chooser(fullpathlist) $hits
+  set file_chooser(nitems) [llength $hits]
+  global dark_gui_colorscheme
+  if {$dark_gui_colorscheme} { set col cyan } else { set col blue }
+  set i 0
+  foreach p $file_chooser(dirs) {
+    if {[lsearch -exact $pathlist $p] != -1} {
+      .ins.center.leftdir.l itemconfigure $i -foreground $col -selectforeground $col
+    } else {
+      .ins.center.leftdir.l itemconfigure $i -foreground black -selectforeground black
+    }
+    incr i
+  }
+}
+
 proc file_chooser {} {
   global file_chooser new_file_browser_ext new_file_browser_depth USER_CONF_DIR
   set file_chooser(action) load
@@ -5787,7 +5934,7 @@ proc file_chooser {} {
   pack .ins.center -side top -expand 1 -fill both
   pack .ins.bottom -side top -fill x
 
-  listbox .ins.center.leftdir.l -listvariable file_chooser(dirtails) -width 40 -height 5 \
+  listbox .ins.center.leftdir.l -listvariable file_chooser(dirtails) -width 20 -height 5 \
     -yscrollcommand ".ins.center.leftdir.s set" -highlightcolor red -highlightthickness 2 \
     -activestyle underline -highlightbackground [option get . background {}] \
     -exportselection 0
@@ -5804,6 +5951,7 @@ proc file_chooser {} {
     "matching the \"Ext\" pattern are shown."] 0 1 3000
   listbox .ins.center.left.l -listvariable file_chooser(files) -width 20 -height 5 \
     -yscrollcommand ".ins.center.left.s set" -highlightcolor red -highlightthickness 2 \
+    -xscrollcommand ".ins.center.left.hs set" \
     -activestyle underline -highlightbackground [option get . background {}] \
     -exportselection 0
 
@@ -5815,9 +5963,11 @@ proc file_chooser {} {
     "Shift-Double click on a symbol will load it in a new window"] 0 1 3000
   scrollbar .ins.center.leftdir.s -command ".ins.center.leftdir.l yview" -takefocus 0
   scrollbar .ins.center.left.s -command ".ins.center.left.l yview" -takefocus 0
+  scrollbar .ins.center.left.hs -command ".ins.center.left.l xview" -orient horiz -takefocus 0
 
-  pack .ins.center.left.l -expand 1 -fill both -side left
-  pack .ins.center.left.s -fill y -side left
+  pack .ins.center.left.s -fill y -side right
+  pack .ins.center.left.hs -side bottom -fill x
+  pack .ins.center.left.l -expand 1 -fill both
 
   pack .ins.center.leftdir.l -expand 1 -fill both -side left
   pack .ins.center.leftdir.s -fill y -side left
@@ -5870,13 +6020,19 @@ proc file_chooser {} {
   entry .ins.top3.ext_e -width 30 -takefocus 0  -state normal -textvariable new_file_browser_ext
   balloon .ins.top3.ext_e "Show only files matching the\nextension regular expression"
 
-  button .ins.top4.select_current -takefocus 0 -text {Select current} -command {
-    set file_chooser(regex) {}
-    file_chooser_select [xschem get schname]
+  label .ins.top3.fzf_l -text {  Fuzzy:}
+  entry .ins.top3.fzf_e -width 25 -highlightcolor red -highlightthickness 2 \
+    -highlightbackground [option get . background {}]
+  balloon .ins.top3.fzf_e "Subsequence-match across all library paths.\nLeft pane shows dirs with hits; middle pane shows full paths."
+  bind .ins.top3.fzf_e <KeyRelease> {
+    fuzzy_chooser_inline [.ins.top3.fzf_e get]
   }
-  balloon .ins.top4.select_current "Select directory and file name\nof current active xschem window"
+  bind .ins.top3.fzf_e <FocusIn> {
+    fuzzy_chooser_inline [.ins.top3.fzf_e get]
+  }
 
-  button .ins.top4.upd -takefocus 0 -text "Reload" -command {
+  button .ins.top4.reset -takefocus 0 -text "Home" -command {
+    set file_chooser(regex) {}
     set file_chooser(abs_filename) {}
     set file_chooser(rel_filename) {}
     set file_chooser(fullpathlist) {}
@@ -5886,16 +6042,18 @@ proc file_chooser {} {
     .ins.center.right configure -bg white
     file_chooser_dirlist
     file_chooser_filelist
+    file_chooser_select [xschem get schname]
   }
-  balloon .ins.top4.upd "Reset and reload list of files"
+  balloon .ins.top4.reset "Reset and re-reads list of files,\nselect entry in current window"
 
   button .ins.top4.search_curr -takefocus 0 -text {Search curr. dir.} -activebackground red -command {
     file_chooser_search current
   }
   balloon .ins.top4.search_curr "Show and select match\n in current directory"
-  button .ins.top4.search_all -takefocus 0 -text {Search all} -activebackground red -command {
-    file_chooser_search_all
-  }
+  checkbutton .ins.top4.search_all -takefocus 0 -variable file_chooser(searchall) -text {Search in all dirs} \
+    -activebackground red -command {
+      file_chooser_search
+    }
   balloon .ins.top4.search_all "Show all matches in all directories"
   button .ins.top4.search -takefocus 0 -text {Search first} -activebackground red -command {
     set file_chooser(nth) 1
@@ -5912,7 +6070,10 @@ proc file_chooser {} {
     file_chooser_search
   }
   balloon .ins.top4.next {show and select next match}
-  checkbutton .ins.top4.fullpath -takefocus 0 -variable file_chooser(fullpath) -text {match full path  }
+  checkbutton .ins.top4.fullpath -takefocus 0 -variable file_chooser(fullpath) -text {Match full path  } \
+     -command {
+       file_chooser_search current
+     }
   balloon .ins.top4.fullpath "Perform regular expression matching on\nfull path instead of only file name"
   button .ins.top4.clear -takefocus 0 -text Clear -command {
     .ins.top3.pat_e delete 0 end
@@ -5940,6 +6101,10 @@ proc file_chooser {} {
   }
 
   bind .ins.top3.pat_e <KeyRelease> {
+    if {[winfo exists .ins.top3.fzf_e] && [.ins.top3.fzf_e get] ne {}} {
+      .ins.top3.fzf_e delete 0 end
+      fuzzy_chooser_inline {}
+    }
     file_chooser_search current
   }
   bind .ins.center.leftdir.l <<ListboxSelect>> {
@@ -5965,11 +6130,33 @@ proc file_chooser {} {
     }
   }
   bind .ins.center.left.l <KeyPress-Return> {
-    if {$file_chooser(action) eq {load}} {
-      .ins.bottom.load invoke
+
+    proc handle_return {} {
+      global file_chooser
+      set type {}
+      set sel [lindex [.ins.center.left.l curselection] 0]
+      if {$sel ne {} && [info exists file_chooser(fullpathlist)]} {
+        set f [lindex $file_chooser(fullpathlist) $sel]
+        if {$f ne {}} {
+          set type [is_xschem_file $f]
+        }
+      }
+      if {$type eq {SYMBOL}} {
+        if {1} { ;#Close file browser on Return key press and place selected symbol
+          xschem place_symbol $f
+          xschem preview_window close .ins.center.right {}
+          destroy .ins
+        } else { ;# Place symbol on Return key press but leave file browser open.
+          set file_chooser(action) {symbol1} ;# only one time insert symbol
+          file_chooser_preview
+        }
+      } else {
+        .ins.bottom.load invoke
+        xschem preview_window close .ins.center.right {}
+        destroy .ins
+      }
     }
-    xschem preview_window close .ins.center.right {}
-    destroy .ins
+    handle_return
   }
   label .ins.bottom.n -text { N. of items:}
   label .ins.bottom.nitems -textvariable file_chooser(nitems)
@@ -6023,8 +6210,7 @@ proc file_chooser {} {
   pack .ins.top2.dir_e -side left -fill x -expand 1
   pack .ins.top2.delete -side left
   pack .ins.top2.save -side left
-  pack .ins.top4.select_current -side left
-  pack .ins.top4.upd -side left
+  pack .ins.top4.reset -side left
   pack .ins.top3.pat_l -side left
   pack .ins.top3.pat_e -side left
   pack .ins.top4.clear -side left
@@ -6042,6 +6228,8 @@ proc file_chooser {} {
   pack .ins.top.editpaths -side left
   pack .ins.top3.ext_l -side left
   pack .ins.top3.ext_e -side left
+  pack .ins.top3.fzf_l -side left
+  pack .ins.top3.fzf_e -side left
   if { [info exists file_chooser(geometry)]} {
     wm geometry .ins "${file_chooser(geometry)}"
   } elseif {[file exists $USER_CONF_DIR/file_chooser_geometry]} {
@@ -6086,9 +6274,18 @@ proc file_chooser {} {
       "set file_chooser(sp1) $file_chooser(sp1)\n" \
     ] $USER_CONF_DIR/file_chooser_geometry
   }
+  if { ![info exists file_chooser(dirs)]} {
+    set file_chooser(files) {}
+    set file_chooser(fullpathlist) {}
+    set file_chooser(nitems) 0
+    set file_chooser(searchall) 0
+  }
   file_chooser_dirlist
   file_chooser_filelist
   set file_chooser(old_dirs) $file_chooser(dirs)
+  if {[info exists file_chooser(abs_filename)] && $file_chooser(abs_filename) ne {}} {
+    file_chooser_select $file_chooser(abs_filename)
+  }
   return {}
 }
 #######################################################################
@@ -6460,7 +6657,7 @@ proc set_netlist_dir { what {dir {} }} {
       set netlist_dir $new_dir
     }
   } ;# what == 1
-  regsub {^~/} $netlist_dir ${env(HOME)}/ netlist_dir
+  literal_regsub {^~/} $netlist_dir ${env(HOME)}/ netlist_dir
   regsub {/$} $netlist_dir {} netlist_dir
   # return $netlist_dir if valid and existing, else return empty string
   if {$netlist_dir ne {} && [file exists $netlist_dir]} {
@@ -6819,7 +7016,7 @@ proc about {} {
   button .about.link2 -text {https://github.com/StefanSchippers/xschem} -font Underline-Font -fg blue -relief flat
   button .about.link3 -text {Online XSCHEM Manual} -font Underline-Font -fg blue -relief flat
   button .about.link4 -text {Local XSCHEM Manual} -font Underline-Font -fg blue -relief flat
-  label .about.copyright -text "\n Copyright (C) 1998-2024 Stefan Schippers (stefan.schippers@gmail.com) \n
+  label .about.copyright -text "\n Copyright (C) 1998-2026 Stefan Schippers (stefan.schippers@gmail.com) \n
  This is free software; see the source for copying conditions.  There is NO warranty;
  not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE\n"
   button .about.close -text Close -command {destroy .about} -font {Sans 18}
@@ -6928,6 +7125,75 @@ proc property_search {} {
   return {}
 }
 
+# Sets some useful global vars to be sed in launcher scripts.
+proc set_xschem_vars {} {
+  global path sch_basename
+  set raw_level [xschem get raw_level]
+  set netlist_type [xschem get netlist_type]
+  set path [string range [xschem get sch_path] 1 end]
+  set sch_basename [file tail [file rootname [xschem get current_name]]]
+  # skip hierarchy components above the level where raw file has been loaded.
+  # node path names to look up in raw file begin from there.
+  set skip 0
+  while { $skip < $raw_level } {
+    regsub {^[^.]*\.} $path {} path
+    incr skip
+  }
+
+  if { $netlist_type eq {spice} } {
+    # this is necessary if spiceprefix is being used in netlists
+    regsub {^([^xX])} $path {x\1} path
+    while { [regsub {\.([^xX])} $path {.x\1} path] } {}
+  }
+}
+
+proc check_tcleval_perms {ask {s {}}} {
+  global xschem_execute_scripts has_x
+  # check for invalid value (not ask, 1, on, ...,  true, 0, off, false, ...)
+  if { [catch { if {$xschem_execute_scripts ne {ask} && $xschem_execute_scripts} {}}]} {
+    set xschem_execute_scripts 0 ;# invalid value. disable.
+    return 0
+  } elseif { $ask && $xschem_execute_scripts ne {ask} && !$xschem_execute_scripts } {
+    return 0
+  } elseif { $ask && $xschem_execute_scripts eq {ask}} {
+    if {[info exists has_x]} {
+      # completely disable event processing in callback()
+      # the alert box causes an Expose event, wicht triggers draw() and translate()
+      # but this procedure may be  called from within a translate() call...
+      xschem set semaphore [expr {[xschem get semaphore] + 3}]
+
+      # if script is too long show only part of it
+      set ss $s
+      if {[string length $ss] > 80} {
+        set ss "[string range $s 0 79]\n..."
+      }
+      set    msg " Allow xschem to execute scripts embedded in schematics?\n\n"
+      append msg " Script:\n"
+      append msg "$ss\n"
+      append msg " WARNING:\n"
+      append msg "   Allowing script execution is a potential security vulnerability,\n"
+      append msg "   Do it only for schematics obtained from trusted sources.\n\n"
+      append msg " To avoid this message look for variable 'xschem_execute_scripts'\n"
+      append msg " in your xschemrc file,\n"
+      append msg " set it to 'yes' to permanently ENABLE scripts,\n"
+      append msg " or set it to 'no' to permanently DISABLE scripts.\n"
+      append msg " Current (default) setting is 'ask'."
+
+      set answer [alert_ $msg {} 0 1]
+      xschem set semaphore [expr {[xschem get semaphore] - 3}]
+      # set answer [tk_messageBox -parent [xschem get topwindow] -message $msg -type yesno]
+      if {$answer  eq {1}} {
+        set xschem_execute_scripts yes
+      } elseif {$answer eq {0}} {
+        set xschem_execute_scripts no
+      }
+    } else {
+      set xschem_execute_scripts yes
+    }
+  }
+  return 1
+}
+
 #20171029
 # allows to call TCL hooks from 'format' strings during netlisting
 # example of symbol spice format definition:
@@ -6937,23 +7203,37 @@ proc property_search {} {
 # they can be used together with TCL xschem command to query instance or symbol
 # attributes.
 #
-proc tclpropeval {s instname symname} {
-  # puts "tclpropeval: $s $instname $symname"
-  global env debug_var
-  regsub {^@tcleval\(} $s {} s
-  regsub {\)([ \t\n]*)$} $s {\1} s
-  # puts "tclpropeval: $s $instname $symname"
-  if { [catch {subst $s} res] } {
-    # puts stderr $res
+proc tclpropeval {s instn symn {ask 1}} {
+  global xschem_execute_scripts
+  # puts "tclpropeval: $s $instn $symn"
+  global env debug_var debug_tcleval instname symname
+  if {![info exists instname]} {set instname $instn}
+  if {![info exists symname]} {set symname $symn}
+
+  if {![check_tcleval_perms $ask $s]} {
     set res ?\n
+    return $res
   }
-  return $res
+
+  if { !$ask || ($xschem_execute_scripts ne {ask} && $xschem_execute_scripts)} {
+    regsub {^@tcleval\(} $s {} s
+    regsub {\)([ \t\n]*)$} $s {\1} s
+
+    if { [catch {uplevel #0 "subst \{$s\}"} res] } {
+      if { $debug_tcleval > 0} { puts "tclpropeval warning: $s --> $res"}
+      set res ?\n
+    }
+    return $res
+  } else {
+    set res ?\n
+    return $res
+  }
 }
 
 # this hook is called in translate() if whole string is contained in a tcleval(...) construct
-proc tclpropeval2 {s} {
-  global debug_tcleval env path debug_var sch_basename
-
+proc tclpropeval2 {s {ask 1}} {
+  global debug_tcleval env path debug_var sch_basename xschem_execute_scripts
+  set ss $s
   set raw_level [xschem get raw_level]
   set netlist_type [xschem get netlist_type]
   # puts "tclpropeval2: s=|$s|"
@@ -6984,9 +7264,19 @@ proc tclpropeval2 {s} {
   regsub {\)([ \n\t]*)$} $s {\1} s
   # puts "tclpropeval2: s=|$s|"
   # puts "tclpropeval2: subst $s=|[subst $s]|"
-  if { [catch {uplevel #0 "subst \{$s\}"} res] } {
-    if { $debug_tcleval > 0} { puts "tclpropeval2 warning: $s --> $res"}
+  set allow [check_tcleval_perms $ask $ss]
+  if {!$allow} {
     set res ?\n
+    return $res
+  }
+  if { !$ask || ($xschem_execute_scripts ne {ask} && $xschem_execute_scripts) } {  
+    if { [catch {uplevel #0 "subst \{$s\}"} res] } {
+      if { $debug_tcleval > 0} { puts "tclpropeval2 warning: $s --> $res"}
+      set res ?\n
+    }
+  } else {
+    set res ?\n
+    return $res
   }
   # puts "tclpropeval2: res=|$res|"
   return $res
@@ -7269,7 +7559,7 @@ proc edit_prop {txtlabel} {
   }
   wm geometry .dialog "${edit_prop_size}+$X+$Y"
   set prev_symbol $symbol
-  set editprop_sympath [get_directory [abs_sym_path [tclpropeval2 $symbol]]]
+  set editprop_sympath [get_directory [abs_sym_path [tclpropeval2 $symbol 0]]]
   frame .dialog.f4
   label .dialog.f4.l1  -text $txtlabel
   label .dialog.f4.path  -text "Path:"
@@ -7809,7 +8099,7 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
   tkwait window .dialog
 
   if {$preserve_disabled eq {disabled}} {
-    if {$tctx::retval ne $tctx::retval_orig} {
+    if { $tctx::rcode ne {} && $tctx::retval ne $tctx::retval_orig} {
       xschem push_undo
       xschem set_modify 1
       set glob_attr [string map {
@@ -7836,11 +8126,15 @@ proc text_line {txtlabel clear {preserve_disabled disabled} } {
 # (this works only if nowait is unset).
 proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
   global has_x
+  if {[winfo exists .alert]} {
+    set tctx::rcode {}
+    return {}
+  }
   set tctx::rcode 1
   if {![info exists has_x] } {return}
   toplevel .alert -class Dialog
   wm title .alert {Alert}
-  wm transient .alert [xschem get topwindow]
+  # wm transient .alert [xschem get topwindow]
   set X [expr {[winfo pointerx .alert] - 70}]
   set Y [expr {[winfo pointery .alert] - 60}]
   if { [string compare $position ""] != 0 } {
@@ -7860,6 +8154,11 @@ proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
     set tctx::rcode 1
     destroy .alert
   }
+  button .alert.b3 -text Copy -command  \
+  "
+    clipboard clear
+    clipboard append [list $txtlabel]
+  "
   if {$yesno} {
     button .alert.b2 -text "No" -command  \
     {
@@ -7867,15 +8166,20 @@ proc alert_ {txtlabel {position +200+300} {nowait {0}} {yesno 0}} {
       destroy .alert
     }
   }
+  wm protocol .alert  WM_DELETE_WINDOW {
+    set tctx::rcode 0 
+    destroy .alert
+  }
 
   pack .alert.l1 -side top -fill both -expand yes
   pack .alert.b1 -side left -fill x -expand yes
   if {$yesno} {pack .alert.b2 -side left -fill x -expand yes}
+  pack .alert.b3 -side left -fill x -expand yes
   tkwait visibility .alert
   # grab set .alert
   focus .alert.b1
-  bind .alert <Return> { destroy .alert }
-  bind .alert <Escape> { destroy .alert }
+  bind .alert <Return> { set tctx::rcode 1; destroy .alert }
+  bind .alert <Escape> { set tctx::rcode 0; destroy .alert }
   bind .alert <Visibility> {
     if { [winfo exists .alert] && [winfo ismapped .alert] && [winfo ismapped .] && [wm stackorder .alert isbelow . ]} {
       if { [winfo exists .drw] } {
@@ -7963,21 +8267,24 @@ proc editdata {{data {}} {title {Edit data}} {wrap {none}} {ro 1}} {
   # wm transient $window [xschem get topwindow]
   frame $window.buttons
   pack $window.buttons -side bottom -fill x -pady 2m
-  button $window.buttons.copy -text {Copy to clipboard} -command "
+  button $window.buttons.copy -text {Copy} -command "
      clipboard clear
-     clipboard append \[$window.text get 1.0 {end - 1 chars}\]
+     clipboard append \[$window.text get sel.first sel.last\]
   "
   button $window.buttons.ok -text OK -command "
      set tctx::retval \[$window.text get 1.0 {end - 1 chars}\]; destroy $window
   "
   button $window.buttons.cancel -text Cancel -command "destroy $window"
+  button $window.buttons.selectall -text {Select all} \
+         -command "$window.text tag add sel 1.0 {end - 1 chars}"
 
   pack $window.buttons.ok -side left -expand 1
   pack $window.buttons.cancel -side left -expand 1
   pack $window.buttons.copy -side left -expand 1
+  pack $window.buttons.selectall -side left -expand 1
 
   if { $ro ne {1} } {
-    button $window.buttons.saveas -text {Save a copy} -command {
+    button $window.buttons.saveas -text {Save As} -command {
       proc editdata_save {} {
         global OS env
 
@@ -8036,6 +8343,15 @@ proc textwindow {filename {ro {}}} {
   pack $textwindow_w.buttons -side bottom -fill x -pady 2m
   button $textwindow_w.buttons.dismiss -text Dismiss -command "destroy $textwindow_w"
   pack $textwindow_w.buttons.dismiss -side left -expand 1
+  button $textwindow_w.buttons.copy -text {Copy} \
+    -command  "
+      clipboard clear
+      clipboard append \[$textwindow_w.text get sel.first sel.last\]
+    "
+  pack $textwindow_w.buttons.copy -side left -expand 1
+  button $textwindow_w.buttons.selectall -text {Select all} \
+         -command  "$textwindow_w.text tag add sel 1.0 {end - 1 chars}"
+  pack $textwindow_w.buttons.selectall -side left -expand 1
   if { $ro eq {} } {
     button $textwindow_w.buttons.save -text "Save" -command \
      {
@@ -8090,6 +8406,15 @@ proc viewdata {data {ro {}} {win .view} {wrap none}} {
   button $viewdata_w.buttons.dismiss -text Dismiss -command  "destroy $viewdata_w"
   pack $viewdata_w.buttons.dismiss -side left -expand 1
 
+  button $viewdata_w.buttons.copy -text {Copy} \
+    -command  "
+      clipboard clear
+      clipboard append \[$viewdata_w.text get sel.first sel.last\]
+    "
+  pack $viewdata_w.buttons.copy -side left -expand 1
+  button $viewdata_w.buttons.selectall -text {Select all} \
+         -command  "$viewdata_w.text tag add sel 1.0 {end - 1 chars}"
+  pack $viewdata_w.buttons.selectall -side left -expand 1
   if { $ro eq {} } {
     button $viewdata_w.buttons.saveas -text {Save As} -command  {
       if {$OS == "Windows"} {
@@ -8108,7 +8433,6 @@ proc viewdata {data {ro {}} {win .view} {wrap none}} {
     }
     pack $viewdata_w.buttons.saveas  -side left -expand 1
   }
-
   eval text $viewdata_w.text -undo 1 -relief sunken -bd 2 -yscrollcommand \"$viewdata_w.yscroll set\" -setgrid 1 \
        -xscrollcommand \"$viewdata_w.xscroll set\" -wrap $wrap -height 30 $text_tabs_setting
   scrollbar $viewdata_w.yscroll -command  "$viewdata_w.text yview"
@@ -8360,6 +8684,19 @@ proc try_download_url {dirname sch_or_sym} {
   }
 }
 
+# reverse lib_alias array lookup (find path given alias)
+proc alias_lib {alias} {
+  global lib_alias
+  foreach {l a} [array get lib_alias] {
+    if {$a eq $alias} {
+      return $l
+    }
+  }
+  return {}
+}
+
+
+
 # Given an absolute path 'symbol' of a symbol/schematic remove the path prefix
 # if file is in a library directory (a $pathlist dir)
 # Example: rel_sym_path /home/schippes/share/xschem/xschem_library/devices/iopin.sym
@@ -8369,7 +8706,7 @@ proc rel_sym_path {symbol {paths {}} } {
   # puts "rel_sym_path: $symbol    $paths"
 
   if { $paths eq {}} {set paths $pathlist}
-  regsub {^~/} $symbol ${env(HOME)}/ symbol
+  literal_regsub {^~/} $symbol ${env(HOME)}/ symbol
   # if {$OS eq "Windows"} {
   #   if {![regexp {^[A-Za-z]\:/} $symbol]} {
   #     set symbol [pwd]/$symbol
@@ -8379,6 +8716,16 @@ proc rel_sym_path {symbol {paths {}} } {
   #     set symbol [pwd]/$symbol
   #   }
   # }
+
+  # return library alias name if existing 
+  if {[regexp {^/} $symbol]} {
+    set lib [file dirname $symbol]
+    set tail [file tail $symbol]
+    if {[info exists ::lib_alias($lib)]} {
+      return $::lib_alias($lib)/$tail
+    }
+  }
+
   set curr_dirname [pwd]
   set name {}
   foreach path_elem $paths {
@@ -8480,6 +8827,17 @@ proc abs_sym_path {fname {ext {} } {paths {}}} {
   }
   ## if fname is present in one of the paths paths get the absolute path
   set name {}
+
+  # if symbol reference uses an alias return associated library path
+  if {[regexp {^[^/]+/[^/]+} $fname]} {
+    set alias [file dirname $fname]
+    set tail [file tail $fname]
+    set lib [alias_lib $alias]
+    if {$lib ne {}} {
+      return $lib/$tail
+    }
+  }
+
   foreach path_elem $paths {
     if { ![string compare $path_elem .]  && [info exist curr_dirname]} {
       set path_elem $curr_dirname
@@ -8684,7 +9042,7 @@ proc balloon_show {w arg pos} {
 }
 
 proc context_menu { } {
-
+  global close_ctxmenu_on_leave
   set tctx::retval 0
   if {[info tclversion] >= 8.5} {
     set font TkDefaultFont
@@ -8817,8 +9175,15 @@ proc context_menu { } {
     set x [expr {$x - ( $x + $wx - $sx )} ]
   }
   wm geometry .ctxmenu "+$x+$y";# move away from screen edges
-  bind .ctxmenu <Leave> {if { {%W} eq {.ctxmenu} } {destroy .ctxmenu}}
-  tkwait window .ctxmenu
+  if { $close_ctxmenu_on_leave } {
+    bind .ctxmenu <Leave> {if { {%W} eq {.ctxmenu} } {destroy .ctxmenu}}
+    tkwait window .ctxmenu
+  } else {
+    set prev [bind [xschem get top_path].drw <Button>]
+    bind [xschem get top_path].drw  <ButtonPress> "destroy .ctxmenu; $prev"
+    tkwait window .ctxmenu
+    bind [xschem get top_path].drw  <Button> $prev 
+  }
   # when context menu is destroyed an EnterNotify event is generated in the
   # main xschem window. We want to process this event before taking
   # actions based on $tctx::retval.
@@ -9637,7 +10002,7 @@ proc quit_xschem { {force {}}} {
 
 proc raise_dialog {parent window_path } {
   global file_dialog_loadfile component_browser_on_top
-  foreach i ".dialog .graphdialog .load" {
+  foreach i ".alert .dialog .graphdialog .load" {
     if {!$component_browser_on_top && [info exists file_dialog_loadfile ] &&
         $file_dialog_loadfile == 2 && $i eq {.load} } {
       continue
@@ -9714,6 +10079,7 @@ proc no_open_dialogs {} {
 ## "bespice_server_getdata" only one tcp listener per process
 ## "file_dialog_*" only one load_file_dialog window is allowed
 ## some file_chooser(...) vars
+## close_ctxmenu_on_leave
 
 set tctx::global_list {
  INITIALINSTDIR INITIALLOADDIR INITIALPROPDIR INITIALTEXTDIR PDK PDK_ROOT SKYWATER_MODELS
@@ -9732,9 +10098,10 @@ set tctx::global_list {
  fix_broken_tiled_fill flat_netlist fullscreen gaw_fd gaw_tcp_address graph_autoload graph_bus
  graph_change_done graph_dialog_default_geometry graph_digital graph_legend graph_linewidth_mult
  graph_logx graph_logy graph_private_cursor graph_rainbow graph_schname graph_sel_color
- graph_sel_wave graph_selected graph_sort graph_unlocked graph_use_ctrl_key 
+ graph_sel_wave graph_selected graph_select_to_zoom graph_sort graph_unlocked graph_use_ctrl_key 
  graph_vlegend hide_empty_graphs
- hide_symbols incr_hilight incremental_select infix_interface infowindow_text intuitive_interface
+ hide_symbols incr_hilight incremental_select infix_interface infowindow_text
+ inst_texts_in_area_select intuitive_interface
  keep_symbols launcher_default_program light_colors line_width live_cursor2_backannotate
  local_netlist_dir lvs_ignore lvs_netlist measure_text netlist_dir netlist_show netlist_type
  new_file_browser_depth new_file_browser_ext
@@ -9753,7 +10120,8 @@ set tctx::global_list {
  top_is_subckt transparent_svg undo_type unselect_partial_sel_wires uppercase_subckt
  use_cursor_for_selection use_lab_wire use_label_prefix use_tclreadline user_wants_copy_cell
  verilog_2001 verilog_bitblast
- viewdata_fileid viewdata_filename viewdata_w xschem_libs xschem_listen_port zoom_full_center
+ viewdata_fileid viewdata_filename viewdata_w xschem_execute_scripts xschem_libs
+ xschem_listen_port zoom_full_center
 }
 
 ## list of global arrays to save/restore on context switching
@@ -9761,7 +10129,7 @@ set tctx::global_list {
 ## EXCEPTIONS, not to be saved/restored:
 ## execute
 set tctx::global_array_list {
-  replace_key dircolor sim enable_layer ngspice::ngspice_data
+  replace_key dircolor sim enable_layer ngspice::ngspice_data lib_alias
 }
 
 proc delete_ctx {context} {
@@ -9972,7 +10340,7 @@ proc show_bindkeys {} {
 }
 
 proc set_bindings {topwin} {
-global env has_x OS autofocus_mainwindow
+global env has_x OS autofocus_mainwindow replace_key
   ###
   ### Tk event handling
   ###
@@ -10000,14 +10368,74 @@ global env has_x OS autofocus_mainwindow
     bind $topwin <Expose> "if {{%W} eq {$topwin}} {xschem callback %W %T %x %y 0 %w %h %s}"
 
     # transform mousewheel events into button4/5 events
-    if {[info tclversion] > 8.7} {
-      bind $topwin <MouseWheel> {
-        if {%D > 0} {
-          xschem callback %W 4 %x %y 0 4 0 %s
+    if {[info tclversion] >= 8.7} {
+      set zoom_state 0
+      set vert_pan_state 4
+      set horiz_pan_state 1
+      # transform mouse wheel modifier key remapping into MouseWheel equivalents
+      if {[info exist replace_key(Button-4)]} {
+        if {[regexp {Control} $replace_key(Button-4)]} {
+          set zoom_state 4
+        } elseif {[regexp {Shift} $replace_key(Button-4)]} {
+          set zoom_state 1
         } else {
-          xschem callback %W 4 %x %y 0 5 0 %s
+          set zoom_state 0
         }
       }
+  
+      if {[info exist replace_key(Shift-Button-4)]} {
+        if {[regexp {Control} $replace_key(Shift-Button-4)]} {
+          set horiz_pan_state 4
+        } elseif {[regexp {Shift} $replace_key(Shift-Button-4)]} {
+          set horiz_pan_state 1
+        } else {
+          set horiz_pan_state 0
+        }
+      } 
+  
+      if {[info exist replace_key(Control-Button-4)]} {
+        if {[regexp {Control} $replace_key(Control-Button-4)]} {
+          set vert_pan_state 4
+        } elseif {[regexp {Shift} $replace_key(Control-Button-4)]} {
+          set vert_pan_state 1
+        } else {
+          set vert_pan_state 0
+        }
+      }
+
+      bind $topwin <MouseWheel> "
+        # puts \"MouseWheel: %D\"
+        if {%D > 0} {
+          # zoom in
+          xschem callback %W 4 %x %y 0 4 0 $zoom_state
+        } else {
+          # zoom out
+          xschem callback %W 4 %x %y 0 5 0 $zoom_state
+        }
+      "
+
+      bind $topwin <Shift-MouseWheel> "
+        # puts \"Shift-MouseWheel: %D\"
+        if {%D > 0} {
+          # pan to the right; move schematic to left
+          xschem callback %W 4 %x %y 0 4 0 $horiz_pan_state
+        } else {
+          # pan to the left; move schematic to right
+          xschem callback %W 4 %x %y 0 5 0 $horiz_pan_state
+        }
+      "
+
+      bind $topwin <Control-MouseWheel> "
+        # puts \"Ctrl-MouseWheel: %D\"
+        if {%D > 0} {
+          # pan down; move schematic up
+          xschem callback %W 4 %x %y 0 4 0 $vert_pan_state
+        } else {
+          # pan up; move schematic down
+          xschem callback %W 4 %x %y 0 5 0 $vert_pan_state
+        }
+      "
+
     }
 
     bind $topwin <Double-Button-1> "xschem callback %W -3 %x %y 0 %b 0 %s"
@@ -10036,7 +10464,7 @@ global env has_x OS autofocus_mainwindow
         if {\[winfo exists .ins\]} {
           set file_chooser(enter) 1 ;# so first time mouse enters file chooser current file will be shown
         }
-        destroy .ctxmenu
+        if {\$close_ctxmenu_on_leave} {destroy .ctxmenu}
         if {\$autofocus_mainwindow} {focus $topwin}
         xschem callback %W %T %x %y 0 0 0 0
       }
@@ -10807,7 +11235,7 @@ proc build_widgets { {topwin {} } } {
   $topwin.menubar.simulation.graph add command -label {Add waveform graph} -command {xschem add_graph}
   $topwin.menubar.simulation.graph add command -label {Add waveform reload launcher} -command {
       xschem place_symbol [find_file_first launcher.sym] "name=h5\ndescr=\"load waves\"
-tclcommand=\"xschem raw_read \$netlist_dir/[file tail [file rootname [xschem get current_name]]].raw tran\"
+tclcommand=\"xschem raw_read \$netlist_dir/@schname\\\\.raw tran\"
 "
   }
   $topwin.menubar.simulation.graph add command -label "Annotate Operating Point into schematic" \
@@ -10921,7 +11349,7 @@ proc trace_set_vars {varname idxname op} {
            $file_chooser(old_new_file_browser_ext) ne $new_file_browser_ext} {
         set file_chooser(old_new_file_browser_ext) $new_file_browser_ext
         if {[winfo exists .ins]} {
-          .ins.top4.upd invoke
+          .ins.top4.reset invoke
         }
       }
     }
@@ -10931,37 +11359,92 @@ proc trace_set_vars {varname idxname op} {
            $file_chooser(old_new_file_browser_depth) ne $new_file_browser_depth} {
         set file_chooser(old_new_file_browser_depth) $new_file_browser_depth
         if {[winfo exists .ins]} {
-          .ins.top4.upd invoke
+          .ins.top4.reset invoke
         }
       }
     }
-  } elseif {$varname eq {file_chooser} && idxname eq {dirs}} {
+  } elseif {$varname eq {file_chooser} && $idxname eq {dirs}} {
     uplevel #0 {
       if {![info exists file_chooser(old_dirs)] ||
            $file_chooser(old_dirs) ne $file_chooser(dirs)} {
         set file_chooser(old_dirs) $file_chooser(dirs)
         if {[winfo exists .ins]} {
-          .ins.top4.upd invoke
+          .ins.top4.reset invoke
         }
       }
     }
   }
 }
 
+#                             0        1        2          3
+# literal_regsub [-all ...] pattern string replacement [resultvar]
+# similar to regsub, but replacement string has no special meaning for &, \1, \2, \0, ...
+proc literal_regsub {args} {
+  set opt {}
+  while {[llength $args] > 0} {
+    set option [lindex $args 0]
+    switch -regexp -- $option {
+      -[^-]+ {
+        lappend opt $option
+        set args [lrange $args 1 end]
+      }
+      -- {
+        set args [lrange $args 1 end]
+        break
+      }
+      default {
+        break
+      }
+    }
+  }
+
+  if {[llength $args] == 3} {
+    lassign $args pattern input replacement
+    # Escape replacement syntax used by regsub.
+    set replacement [string map [list "\\" "\\\\" "&" "\\&"] $replacement]
+    set arg [list $pattern $input $replacement]
+    set command  [linsert $opt 0 regsub]
+    return [eval $command $arg]
+  } elseif {[llength $args] == 4} {
+    lassign $args pattern input replacement result
+    # Escape replacement syntax used by regsub.
+    set replacement [string map [list "\\" "\\\\" "&" "\\&"] $replacement]
+    upvar 1 $result res
+    set arg [list $pattern $input $replacement res]
+    set command  [linsert $opt 0 regsub]
+    return [eval $command $arg]
+  }
+}
+
+proc cleanup_path {path} {
+  global env
+  # replace ~ with HOME or ~/ with HOME/
+  literal_regsub {^~$} $path ${env(HOME)} path
+  literal_regsub {^~/} $path ${env(HOME)}/ path
+  ## replace all runs of multiple / with single / 
+  regsub -all {/+} $path {/} path
+  ## replace all '/./' with '/'
+  while {[regsub {/\./} $path {/} path]} {}
+  ## transform  a/b/../c to a/c or a/b/c/.. to a/b
+  while {[regsub {([^/]*\.*[^./]+[^/]*)/\.\./?} $path {} path] } {}
+  ## remove trailing '/'  or '/.'
+  while {[regsub {/\.?$} $path {} path]} {}
+  if {![string compare $path .]} {
+    # ...
+  } elseif { [regexp {\.\.\/} $path] } {
+    set path [file normalize $path]
+  }
+  return $path
+}
+
 proc cleanup_paths {paths} {
   global env
   set path_l {}
   foreach i $paths {
-    regsub {^~$} $i ${env(HOME)} i
-    regsub {^~/} $i ${env(HOME)}/ i
-    regsub -all {/+} $i {/} i
-    if {![string compare $i .]} {
-      # ...
-    } elseif { [regexp {^#} $i] } {
+    if { [regexp {^#} $i] } {
       continue
-    } elseif { [regexp {\.\.\/} $i] } {
-      set i [file normalize $i]
     }
+    set i [cleanup_path $i]
     if { [file exists $i] } {
       lappend path_l $i
     }
@@ -10970,21 +11453,47 @@ proc cleanup_paths {paths} {
 }
 
 proc set_paths {} {
-  global XSCHEM_LIBRARY_PATH pathlist OS add_all_windows_drives
+  global XSCHEM_LIBRARY_PATH pathlist OS add_all_windows_drives lib_alias
   # puts stderr "caching search paths"
+  array unset lib_alias
   if { [info exists XSCHEM_LIBRARY_PATH] } {
     if {$OS == "Windows"} {
-      set path_l_orig [split $XSCHEM_LIBRARY_PATH \;]
+      set path_l_orig1 [split $XSCHEM_LIBRARY_PATH \;]
       if {$add_all_windows_drives} {
         set win_vol [file volumes]
         foreach disk $win_vol {
-          lappend path_l_orig $disk
+          lappend path_l_orig1 $disk
         }
       }
     } else {
-      set path_l_orig [split $XSCHEM_LIBRARY_PATH :]
+      set path_l_orig1 [split $XSCHEM_LIBRARY_PATH :]
     }
-    set pathlist [cleanup_paths $path_l_orig]
+
+    set path_l_orig2 {}
+    # recognize path elemnts with alias: /some/path/for/xschem | alias
+    set first 1
+    foreach p $path_l_orig1 {
+      # if {[regexp {^[^|]+[|][^|]+$} $p]} {}
+      if {[regexp {[|]} $p]} {
+        regsub { +[|] +} $p {|} p
+        regsub {([^\\])\|} $p "\\1\x00" p ;# transform | to \x00
+        regsub -all {\\\|} $p {|} p       ;# transform all \| to |
+        lassign [split $p \x00] path alias
+        set clean_path [cleanup_path $path]
+        if {$first} {
+          puts "setting library aliases:"
+          set first 0
+        }
+        puts "  $alias -> $clean_path"
+        set lib_alias($clean_path) $alias
+        set p $path
+      }
+      lappend path_l_orig2 $p
+    }
+    if {!$first} {
+      puts "done."
+    }
+    set pathlist [cleanup_paths $path_l_orig2]
   }
   if {$pathlist eq {}} { set pathlist [pwd] }
 
@@ -11240,7 +11749,7 @@ if { [info exists has_x]} {
     option add *insertBackground {white} startupFile
     option add *selectColor {grey10} startupFile ;# checkbuttons, radiobuttons
     option add *selectForeground black
-    option add *selectBackground grey70
+    option add *selectBackground grey30
     if { [info tclversion] > 8.4} {
       ttk::style configure TCombobox -fieldbackground grey20
     }
@@ -11351,8 +11860,20 @@ set tclcmd_txt {}
 ###
 
 if { ![info exists dircolor] } {
-  set_ne dircolor(/share/xschem/) red
-  set_ne dircolor(/share/doc/xschem/) {#338844}
+  set_ne dircolor(/devices$) {#007700}
+  set_ne dircolor(/logic$) {#770000}
+  set_ne dircolor(/examples$) {#770000}
+  set_ne dircolor(/generators$) {#770000}
+  set_ne dircolor(/ngspice$) {#770000}
+  set_ne dircolor(/rom8k$) {#770000}
+  set_ne dircolor(/analyses$) {#770000}
+  set_ne dircolor(/xschem_simulator$) {#770000}
+  set_ne dircolor(/ngspice_verilog_cosim$) {#770000}
+  set_ne dircolor(/inst_sch_select$) {#770000}
+  set_ne dircolor(/xTAG$) {#770000}
+  set_ne dircolor(/pcb$) {#770000}
+  set_ne dircolor(/library_LCC_stefan$) {#770000}
+  set_ne dircolor(/binto7seg$) {#770000}
 }
 
 set_ne file_dialog_globfilter {*}
@@ -11372,6 +11893,7 @@ set_ne uppercase_subckt 0
 set_ne lvs_ignore 0
 set_ne hide_empty_graphs 0 ;# if set to 1 waveform boxes will be hidden if no raw file loaded
 set_ne graph_use_ctrl_key 0;# if set forces to use Control key to operate on graphs
+set_ne graph_select_to_zoom 0;  #if set requires graph box to be selected to allow to zoom / pan with mouse / keys.
 set_ne spiceprefix 1
 set_ne verilog_2001 1
 set_ne verilog_bitblast 0
@@ -11402,6 +11924,7 @@ set_ne draw_window 0
 set_ne show_hidden_texts 0
 set_ne incr_hilight 1
 set_ne enable_stretch 0
+set_ne inst_texts_in_area_select 0
 set_ne constr_mv 0
 set_ne unselect_partial_sel_wires 0
 set_ne load_file_dialog_fullpath 1
@@ -11484,6 +12007,9 @@ set_ne tabbed_interface 1
 ## if enabled.
 set_ne open_in_new_window 0
 
+## if 1 context menu will be closed if mouse exits context menu window. Otherwise a click is needed
+set_ne close_ctxmenu_on_leave 1
+
 ## case insensitive symbol lookup (on case insensitive filesystems only!)
 set_ne case_insensitive 0
 
@@ -11513,6 +12039,7 @@ set_ne terminal xterm
 # xschem tcp port number (listen to port and execute commands from there if set)
 # set a port number in xschemrc if you want accept remote connections.
 set_ne xschem_listen_port {}
+set_ne xschem_execute_scripts ask
 
 # server for bespice waveform connection (listen to port and send commands to bespice if set)
 # set a port number in xschemrc if you want xschem to be able to cross-probe to bespice

@@ -3,7 +3,7 @@ v {xschem version=3.4.8RC file_version=1.3
 * This file is part of XSCHEM,
 * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
 * simulation.
-* Copyright (C) 1998-2024 Stefan Frederik Schippers
+* Copyright (C) 1998-2026 Stefan Frederik Schippers
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -159,13 +159,8 @@ C {comp3.sym} 480 -580 0 0 {name=x5
 schematic=comp3_empty.sch}
 C {comp3.sym} 480 -290 0 0 {name=x6
 schematic=comp3_file
-spice_sym_def="tcleval(
-  [read_data_nonewline [abs_sym_path comp3_file.cir]]
-)"
-
-vhdl_sym_def="tcleval(
-  [read_data_nonewline [abs_sym_path comp3_file.cir]]
-)"
+spice_sym_def="tcleval([read_data_nonewline [abs_sym_path comp3_file.cir]])"
+vhdl_sym_def="tcleval([read_data_nonewline [abs_sym_path comp3_file.cir]])"
 tclcommand="textwindow [abs_sym_path comp3_file.cir]"}
 C {comp3_read.sym} 890 -280 0 0 {name=x7
 

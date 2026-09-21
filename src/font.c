@@ -3,7 +3,7 @@
  * This file is part of XSCHEM,
  * a schematic capture and Spice/Vhdl/Verilog netlisting tool for circuit
  * simulation.
- * Copyright (C) 1998-2024 Stefan Frederik Schippers
+ * Copyright (C) 1998-2026 Stefan Frederik Schippers
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ void compile_font(void)
  for(code=0;code<127;code++)
  {
   unselect_all(1);
-  select_inside(0, code*FONTOFFSET-1,-FONTHEIGHT-1,
+  select_inside(0, 0, code*FONTOFFSET-1,-FONTHEIGHT-1,
                  code*FONTOFFSET+FONTWIDTH+1,FONTWHITESPACE + FONTDESCENT+1, 1);
   rebuild_selected_array();
   character[code] = my_calloc(_ALLOC_ID_, xctx->lastsel*4+1, sizeof(double));
